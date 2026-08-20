@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/**
+ * Dark, data-dense, mobile-first. The palette nods to FPL's purple and green
+ * without imitating the official product.
+ */
+@theme {
+  --color-base: #0a0910;
+  --color-surface: #12101b;
+  --color-surface-2: #1a1726;
+  --color-border: #2a2438;
+
+  --color-ink: #f2f0f7;
+  --color-ink-muted: #a29cb8;
+  --color-ink-faint: #6f6885;
+
+  --color-accent: #00e87b;
+  --color-accent-dim: #0a9d57;
+  --color-violet: #a855f7;
+
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+
+  /* Fixture difficulty, FDR 1 (easiest) to 5 (hardest). */
+  --color-fdr-1: #0e7a4a;
+  --color-fdr-2: #16a34a;
+  --color-fdr-3: #4b4660;
+  --color-fdr-4: #b45309;
+  --color-fdr-5: #b91c1c;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers must line up in tables — tabular figures, always. */
+.numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide tables scroll inside their own container, never the page. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
