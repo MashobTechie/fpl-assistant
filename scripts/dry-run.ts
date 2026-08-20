@@ -9,21 +9,68 @@ import { getBootstrap } from "../lib/fpl/client";
 async function main() {
   const bootstrap = await getBootstrap();
 
-  // Build a legal 15 (2 GKP, 5 DEF, 5 MID, 3 FWD) from the most-owned players,
-  // which approximates a real template squad.
-  const owned = (t: number) =>
-    bootstrap.elements
-      .filter((e) => e.element_type === t && e.status === "a")
-      .sort((a, b) => parseFloat(b.selected_by_percent) - parseFloat(a.selected_by_percent));
+  // Build a genuinely legal 15: the right shape, at most three from any club,
+  // and inside £100.0m. Filling the quotas by ownership alone is not enough —
+  // the most-owned players cluster into the good teams and cost about £112m,
+  // so tuning against that squad tunes against a team nobody can field.
+  const QUOTA: Record<number, number> = { 1: 2, 2: 5, 3: 5, 4: 3 };
+  const BUDGET = 1000; // tenths of a million, as FPL stores it
+  const MAX_CLUB = 3;
 
-  const playerIds = [
-    ...owned(1).slice(0, 2),
-    ...owned(2).slice(0, 5),
-    ...owned(3).slice(0, 5),
-    ...owned(4).slice(0, 3),
-  ].map((e) => e.id);
+  const pool = bootstrap.elements
+    .filter((e) => e.status === "a")
+    .sort(
+      (a, b) =>
+        parseFloat(b.selected_by_percent) - parseFloat(a.selected_by_percent),
+    );
 
-  console.log("Template squad:", playerIds.length, "players\n");
+  const squad: typeof pool = [];
+  const posCount: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const clubCount = new Map<number, number>();
+
+  const canAdd = (e: (typeof pool)[number]) =>
+    posCount[e.element_type] < QUOTA[e.element_type] &&
+    (clubCount.get(e.team) ?? 0) < MAX_CLUB &&
+    !squad.some((x) => x.id === e.id);
+
+  const add = (e: (typeof pool)[number]) => {
+    squad.push(e);
+    posCount[e.element_type]++;
+    clubCount.set(e.team, (clubCount.get(e.team) ?? 0) + 1);
+  };
+  const drop = (e: (typeof pool)[number]) => {
+    squad.splice(squad.indexOf(e), 1);
+    posCount[e.element_type]--;
+    clubCount.set(e.team, (clubCount.get(e.team) ?? 1) - 1);
+  };
+
+  for (const e of pool) if (canAdd(e)) add(e);
+
+  // Downgrade the priciest player for the cheapest legal alternative until the
+  // squad fits, which is what a real manager does when the sums do not work.
+  const total = () => squad.reduce((sum, e) => sum + e.now_cost, 0);
+  while (total() > BUDGET) {
+    const dearest = [...squad].sort((a, b) => b.now_cost - a.now_cost)[0];
+    drop(dearest);
+    const replacement = pool
+      .filter(
+        (e) =>
+          e.element_type === dearest.element_type &&
+          e.now_cost < dearest.now_cost &&
+          canAdd(e),
+      )
+      .sort((a, b) => a.now_cost - b.now_cost)[0];
+    if (!replacement) {
+      add(dearest); // nothing cheaper available; stop rather than loop forever
+      break;
+    }
+    add(replacement);
+  }
+
+  const playerIds = squad.map((e) => e.id);
+  console.log(
+    `Template squad: ${playerIds.length} players, £${(total() / 10).toFixed(1)}m\n`,
+  );
 
   const resolved = await resolveSquad({ playerIds });
 

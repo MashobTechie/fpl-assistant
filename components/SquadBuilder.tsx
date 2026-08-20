@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  MAX_PER_CLUB,
   SQUAD_BUDGET,
   SQUAD_QUOTA,
   type PlayerListItem,
@@ -67,6 +68,13 @@ export function SquadBuilder({
     [selected],
   );
 
+  /** FPL allows at most three players from any one club. */
+  const clubCounts = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const p of selected) c.set(p.team, (c.get(p.team) ?? 0) + 1);
+    return c;
+  }, [selected]);
+
   const visible = useMemo(() => {
     if (!players) return [];
     const q = query.trim().toLowerCase();
@@ -84,10 +92,21 @@ export function SquadBuilder({
   const complete = POSITIONS.every((pos) => counts[pos] === SQUAD_QUOTA[pos]);
   const overBudget = spend > SQUAD_BUDGET;
 
+  function blockedReason(player: PlayerListItem): string | null {
+    if (selectedIds.has(player.id)) return null;
+    if (counts[player.position] >= SQUAD_QUOTA[player.position]) {
+      return `You already have ${SQUAD_QUOTA[player.position]} ${player.position}`;
+    }
+    if ((clubCounts.get(player.team) ?? 0) >= MAX_PER_CLUB) {
+      return `Max ${MAX_PER_CLUB} players from ${player.team}`;
+    }
+    return null;
+  }
+
   function toggle(player: PlayerListItem) {
     if (selectedIds.has(player.id)) {
       setSelected((s) => s.filter((p) => p.id !== player.id));
-    } else if (counts[player.position] < SQUAD_QUOTA[player.position]) {
+    } else if (!blockedReason(player)) {
       setSelected((s) => [...s, player]);
     }
   }
@@ -145,13 +164,14 @@ export function SquadBuilder({
       <ul className="max-h-80 divide-y divide-[--color-border] overflow-y-auto rounded-lg border border-[--color-border]">
         {visible.map((p) => {
           const isSelected = selectedIds.has(p.id);
-          const full = counts[p.position] >= SQUAD_QUOTA[p.position];
+          const blocked = blockedReason(p);
           return (
             <li key={p.id}>
               <button
                 type="button"
                 onClick={() => toggle(p)}
-                disabled={!isSelected && full}
+                disabled={blocked !== null}
+                title={blocked ?? undefined}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition disabled:opacity-40 ${
                   isSelected ? "bg-[--color-accent]/10" : "hover:bg-[--color-surface-2]"
                 }`}
@@ -166,7 +186,10 @@ export function SquadBuilder({
                     )}
                   </span>
                   <span className="text-[11px] text-[--color-ink-faint]">
-                    {p.team} · £{p.cost.toFixed(1)}m · {p.minutes}′
+                    {p.team}
+                    {(clubCounts.get(p.team) ?? 0) > 0 &&
+                      ` ${clubCounts.get(p.team)}/${MAX_PER_CLUB}`}
+                    {" · "}£{p.cost.toFixed(1)}m · {p.minutes}′
                   </span>
                 </span>
                 <span className="hidden gap-1 sm:flex">

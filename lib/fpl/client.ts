@@ -63,6 +63,14 @@ const ELEMENT_FIELDS = [
   "form", "points_per_game", "selected_by_percent", "ep_next",
   "expected_goals", "expected_assists",
   "penalties_order", "corners_and_indirect_freekicks_order", "direct_freekicks_order",
+  // Price movement. FPL publishes its own forecast in price_change_projections,
+  // so predicting rises is largely a matter of not discarding the field.
+  "cost_change_event", "cost_change_start",
+  "cost_change_event_fall", "cost_change_start_fall",
+  "transfers_in_event", "transfers_out_event",
+  "price_change_projections", "price_change_percent",
+  "price_change_hourly_rate", "price_change_locked_until",
+  "price_change_calibrating",
 ] as const satisfies readonly (keyof FplElement)[];
 
 function trimBootstrap(raw: FplBootstrap): FplBootstrap {

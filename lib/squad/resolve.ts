@@ -17,9 +17,14 @@ import {
   type PlayerProjection,
 } from "@/lib/projections/engine";
 import { optimiseSquad, type OptimisedSquad } from "./optimizer";
+import {
+  squadCost,
+  validateSquadComposition,
+  validateSquadIds,
+} from "./validate";
 
 export const DEFAULT_HORIZON = 5;
-export const SQUAD_SIZE = 15;
+export { SQUAD_SIZE } from "@/lib/types";
 
 export class SquadResolutionError extends Error {
   constructor(
@@ -111,15 +116,15 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let teamName: string | null = null;
   let bank: number | null = null;
   let squadValue: number | null = null;
+  let manual = false;
 
   if (opts.playerIds?.length) {
-    if (opts.playerIds.length !== SQUAD_SIZE) {
-      throw new SquadResolutionError(
-        `A squad must contain exactly ${SQUAD_SIZE} players; received ${opts.playerIds.length}.`,
-        "invalid_squad",
-      );
+    const problems = validateSquadIds(opts.playerIds);
+    if (problems.length > 0) {
+      throw new SquadResolutionError(problems.join(" "), "invalid_squad");
     }
     playerIds = opts.playerIds;
+    manual = true;
   } else if (opts.entryId) {
     const entry = await getEntry(opts.entryId).catch(() => null);
     if (!entry) {
@@ -161,7 +166,29 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     return projectPlayer(element, ctx, gameweek, horizon);
   });
 
-  const optimal = optimiseSquad(squad);
+  // Only reachable for a manual squad: an imported one is legal by
+  // construction, having been built inside FPL's own rules.
+  const problems = validateSquadComposition(squad, { enforceBudget: manual });
+  if (problems.length > 0) {
+    throw new SquadResolutionError(problems.join(" "), "invalid_squad");
+  }
+
+  // A manual squad is priced at today's cost, which is what the manager would
+  // pay to assemble it now. An imported squad reports the value FPL holds.
+  if (manual) squadValue = squadCost(squad);
+
+  // The optimiser throws plain Errors for shapes it cannot field. Validation
+  // above should make those unreachable, but an escaped one would surface as a
+  // 500 with a stack trace rather than a usable message.
+  let optimal: OptimisedSquad;
+  try {
+    optimal = optimiseSquad(squad);
+  } catch (err) {
+    throw new SquadResolutionError(
+      err instanceof Error ? err.message : "This squad cannot field a legal XI.",
+      "invalid_squad",
+    );
+  }
 
   const allProjections = bootstrap.elements.map((e) =>
     projectPlayer(e, ctx, gameweek, horizon),

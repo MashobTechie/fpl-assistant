@@ -80,6 +80,42 @@ export interface FplElement {
   penalties_order: number | null;
   corners_and_indirect_freekicks_order: number | null;
   direct_freekicks_order: number | null;
+
+  // ---------------------------------------------------------- price movement
+  //
+  // All in tenths of a million, matching now_cost. A player's price moves with
+  // net transfer flow, so holding a riser before it rises is worth real team
+  // value over a season — and selling after a fall crystallises the loss.
+
+  /** Price change during the current gameweek. Negative for a fall. */
+  cost_change_event: number;
+  /** Price change since the season started. Negative for a fall. */
+  cost_change_start: number;
+  /** Falls only, as a positive number. */
+  cost_change_event_fall: number;
+  cost_change_start_fall: number;
+
+  /** Net transfer flow, which is what actually drives a price change. */
+  transfers_in_event: number;
+  transfers_out_event: number;
+
+  /**
+   * FPL's own forward-looking price forecast — one entry per day ahead.
+   * `offset` 0 is tonight's change. Present but all-zero before the season's
+   * first deadline, and while `price_change_calibrating` is true.
+   */
+  price_change_projections: {
+    offset: number;
+    projected_percent: string;
+    likelihood: number;
+  }[];
+  /** Percentage progress toward the next change; "100" triggers it. */
+  price_change_percent: string;
+  price_change_hourly_rate: number;
+  /** ISO timestamp, or null. Price cannot move before this. */
+  price_change_locked_until: string | null;
+  /** True early in a season, while FPL has too little flow data to forecast. */
+  price_change_calibrating: boolean;
 }
 
 export interface FplEvent {

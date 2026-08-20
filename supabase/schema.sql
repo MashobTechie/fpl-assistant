@@ -90,6 +90,13 @@ create table if not exists public.analyses (
   squad_id    uuid references public.squads (id) on delete set null,
   gameweek    integer not null check (gameweek between 1 and 38),
   horizon     integer not null default 5,
+  -- Fingerprint of the 15 picks this analysis actually described.
+  --
+  -- squads carries unique (user_id, gameweek), so changing your squad before a
+  -- deadline reuses the same squad row and the same id. Keying the analysis
+  -- cache on squad_id alone therefore returned the previous squad's reasoning
+  -- for a squad it no longer described — while reporting cached: true.
+  squad_hash  text not null,
   model       text not null,
   -- The projection engine's output, so a past analysis can be read against the
   -- numbers it was actually given rather than today's.
@@ -100,6 +107,10 @@ create table if not exists public.analyses (
 
 create index if not exists analyses_user_gameweek_idx
   on public.analyses (user_id, gameweek desc, created_at desc);
+
+-- The analysis-cache lookup: the exact squad, gameweek and horizon.
+create index if not exists analyses_cache_idx
+  on public.analyses (user_id, squad_hash, gameweek, horizon, created_at desc);
 
 alter table public.analyses enable row level security;
 

@@ -8,6 +8,7 @@ import {
   SquadResolutionError,
   SQUAD_SIZE,
 } from "@/lib/squad/resolve";
+import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -104,12 +105,17 @@ export async function POST(request: Request) {
   // ---- Reuse a cached analysis unless asked not to -----------------------
   // An LLM call per dashboard refresh would make the product expensive for no
   // benefit: the same squad and gameweek yields the same reasoning.
+  // Keyed on the picks themselves. squads carries unique (user_id, gameweek),
+  // so a squad changed before the deadline keeps its row id — keying on
+  // squad_id would hand back the previous squad's reasoning as `cached: true`.
+  const hash = squadHash(resolved.playerIds);
+
   if (!body.refresh) {
     const { data: cached } = await supabase
       .from("analyses")
       .select("analysis, projections, created_at")
       .eq("user_id", user.id)
-      .eq("squad_id", squadRow.id)
+      .eq("squad_hash", hash)
       .eq("gameweek", resolved.gameweek)
       .eq("horizon", resolved.horizon)
       .order("created_at", { ascending: false })
@@ -152,15 +158,25 @@ export async function POST(request: Request) {
     throw err;
   }
 
-  await supabase.from("analyses").insert({
+  // A failure here is not fatal — the analysis is already paid for and is
+  // returned below — but it means the next identical request misses the cache
+  // and bills again, so it must not pass silently.
+  const { error: insertError } = await supabase.from("analyses").insert({
     user_id: user.id,
     squad_id: squadRow.id,
+    squad_hash: hash,
     gameweek: resolved.gameweek,
     horizon: resolved.horizon,
     model: process.env.ANTHROPIC_MODEL ?? "claude-opus-5",
     projections: resolved.squad,
     analysis,
   });
+  if (insertError) {
+    console.error(
+      "[analysis] failed to cache a paid-for analysis; the next identical " +
+        `request will bill again: ${insertError.message}`,
+    );
+  }
 
   return NextResponse.json({
     gameweek: resolved.gameweek,
