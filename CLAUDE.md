@@ -130,13 +130,18 @@ dedicated planner screen yet.
 
 In rough priority order:
 
-1. **Run `/api/analysis` for real.** It is the one path never executed. Needs a
-   Supabase project (paste `supabase/schema.sql` into its SQL editor) and an
-   `ANTHROPIC_API_KEY`. Everything else was verified against live FPL data.
-2. **Decide the repo question.** Nothing is committed and the folder sits inside
-   the `ctrl_lab` repo rather than being its own.
-3. Then the deferred features: player-comparison screen, a real transfer-planner
-   UI, chip strategy, price-rise prediction.
+1. **Fill in real credentials.** `.env.local` exists but holds placeholders,
+   which is why nothing Supabase-backed has ever run. Needs a Supabase project
+   (paste `supabase/schema.sql` into its SQL editor) and an `ANTHROPIC_API_KEY`,
+   with a spend limit set in the Console first.
+2. **Run `/api/analysis` for real.** It is the one path never executed.
+   Everything else was verified against live FPL data.
+3. **Push to GitHub.** Resolved 2026-08-20: this is its own git repo, not a
+   `ctrl_lab` subfolder, so that the Vercel project root is the repo root. The
+   initial commit is in; the remote is not yet created (`gh` is not installed
+   on this machine).
+4. **Deploy to Vercel**, then the deferred features: player-comparison screen,
+   a real transfer-planner UI, chip strategy, price-rise prediction.
 
 Tune the projection maths with `npm run dry-run`, which costs nothing.
 
