@@ -49,12 +49,22 @@ export const BoomCandidateSchema = PlayerRef.extend({
 });
 
 export const TransferIdeaSchema = z.object({
+  /**
+   * The outgoing player must be one of the target's supplied fundedBy entries.
+   * Requiring it in the output is what stops a recommendation the manager
+   * cannot actually execute — the constraint has to be answered, not assumed.
+   */
   outPlayerId: z.number(),
   outName: z.string(),
   inPlayerId: z.number(),
   inName: z.string(),
   horizon: z.enum(["short_term", "medium_term"]),
   reasoning: z.string(),
+  funding: z
+    .string()
+    .describe(
+      "How the move is paid for, using only supplied figures: the outgoing player's selling price plus the bank against the incoming fee, and what is left over afterwards.",
+    ),
   expectedGain: z
     .string()
     .describe("Projected points swing over the stated horizon, from the supplied numbers"),

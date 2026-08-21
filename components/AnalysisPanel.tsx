@@ -187,9 +187,16 @@ export function AnalysisPanel({
                   </span>
                 </div>
                 <p className="mt-1.5 text-[--color-ink-muted]">{t.reasoning}</p>
-                <p className="numeric mt-1 text-xs text-[--color-ink-faint]">
-                  {t.expectedGain}
-                </p>
+                <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                  <div className="flex gap-1.5">
+                    <dt className="eyebrow text-[9px] text-[--color-ink-faint]">Funding</dt>
+                    <dd className="numeric text-[--color-cyan]">{t.funding}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="eyebrow text-[9px] text-[--color-ink-faint]">Gain</dt>
+                    <dd className="numeric text-[--color-ink-muted]">{t.expectedGain}</dd>
+                  </div>
+                </dl>
               </li>
             ))}
           </ul>

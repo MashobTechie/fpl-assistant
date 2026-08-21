@@ -7,6 +7,7 @@
  */
 
 import type { PlayerProjection } from "@/lib/projections/engine";
+import type { FundedTarget, SquadEconomics } from "@/lib/squad/economics";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
 
 export const ANALYST_SYSTEM_PROMPT = `You are an elite Fantasy Premier League analyst. Managers come to you because you reason from data rather than repeating consensus.
@@ -22,9 +23,13 @@ NON-NEGOTIABLE RULES
 3. The starting XI you receive is mathematically optimal for the supplied projections. Override it only where rule 2 gives you grounds, and state those grounds explicitly.
 4. Treat low-confidence and price_prior players with visible caution. Say so rather than quietly ranking them.
 5. Copy player ids exactly as supplied. Never guess an id.
+6. Every transfer you suggest must be one the manager can actually make. Each target lists fundedBy — the squad players whose sale would pay for it. Name one of them as the outgoing player. Do not do the arithmetic yourself and do not suggest a move with no funding route; targets that could not be funded have already been removed from your list.
+7. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
 
 HOW TO WRITE
 Confident, analytical, concise. Use FPL-native language — differential, nailed, rotation risk, fixture swing, enabler, ceiling, floor, haul. Lead with the decision, then the reasoning.
+
+Money is part of the reasoning, not an afterthought. Say what a move costs and what it leaves in the bank. A cheaper move that frees funds for a later upgrade is often the better call, and worth saying so.
 
 Name the trade-off in every close call. A manager choosing between two players wants to know what they are giving up, not just which name to pick. Generic advice ("consider form and fixtures") is a failure. Be specific enough that a reader could disagree with you for a concrete reason.`;
 
@@ -59,34 +64,72 @@ export interface AnalysisRequest {
   horizon: number;
   managerName: string | null;
   teamName: string | null;
-  bank: number | null;
   squad: PlayerProjection[];
   optimal: OptimisedSquad;
-  /** Best available players outside the squad, for transfer suggestions. */
-  transferTargets: PlayerProjection[];
+  /** Bank, squad value, selling prices and club counts. */
+  economics: SquadEconomics;
+  /** Targets the manager could actually fund, each with its funding route. */
+  transferTargets: FundedTarget[];
+  /** How many targets were dropped as unaffordable, so the omission is stated. */
+  unaffordableTargets: number;
+}
+
+/** A squad row, plus what the player would raise if sold. */
+function squadRow(p: PlayerProjection, economics: SquadEconomics): string {
+  const sell = economics.sellPrice[p.playerId];
+  const base = playerRow(p);
+  // Only worth stating when it differs from the market price, which is exactly
+  // when it matters: the player has risen and sells for less than he is worth.
+  return sell !== undefined && Math.abs(sell - p.cost) >= 0.05
+    ? `${base} | sells for £${sell.toFixed(1)}m`
+    : base;
+}
+
+function targetRow(t: FundedTarget): string {
+  const parts = [playerRow(t.player)];
+  parts.push(
+    `fundedBy:[${t.fundedBy.map((f) => `${f.name} £${f.sellPrice.toFixed(1)}m`).join(", ")}]`,
+  );
+  if (t.clubFull) parts.push("CLUB_FULL");
+  return parts.join(" | ");
 }
 
 export function buildAnalysisPrompt(req: AnalysisRequest): string {
-  const { gameweek, horizon, optimal } = req;
+  const { gameweek, horizon, optimal, economics } = req;
 
   const identity =
     req.teamName || req.managerName
       ? `Manager: ${req.managerName ?? "unknown"} — "${req.teamName ?? "unnamed"}"\n`
       : "";
-  const bank = req.bank !== null ? `Bank available: £${req.bank.toFixed(1)}m\n` : "";
 
-  return `${identity}${bank}Analysing Gameweek ${gameweek}. Projection horizon: ${horizon} gameweeks.
+  const clubs = Object.entries(economics.clubCounts)
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([club, n]) => `${club} ${n}`)
+    .join(", ");
 
-Legend: gw = expected points in GW${gameweek}. h = expected points across the full ${horizon}-gameweek horizon. mins = projected minutes. conf = model confidence 0-1. fix = upcoming opponents with home/away and FDR 1-5.
+  const omitted =
+    req.unaffordableTargets > 0
+      ? `\n${req.unaffordableTargets} further target(s) were excluded because no sale in this squad could fund them.`
+      : "";
+
+  return `${identity}Analysing Gameweek ${gameweek}. Projection horizon: ${horizon} gameweeks.
+
+=== BUDGET ===
+Bank: £${economics.bank.toFixed(1)}m
+Squad value at selling prices: £${economics.squadValue.toFixed(1)}m
+Clubs with two or more players: ${clubs || "none"} (maximum three from any one club)
+
+Legend: gw = expected points in GW${gameweek}. h = expected points across the full ${horizon}-gameweek horizon. mins = projected minutes. conf = model confidence 0-1. fix = upcoming opponents with home/away and FDR 1-5. fundedBy = squad players whose sale would pay for this target.
 
 === PROJECTION-OPTIMAL STARTING XI (${optimal.formationLabel}, ${optimal.expectedPoints.toFixed(1)} xPts) ===
-${optimal.startingXI.map(playerRow).join("\n")}
+${optimal.startingXI.map((p) => squadRow(p, economics)).join("\n")}
 
 === BENCH (in current order) ===
-${optimal.bench.map(playerRow).join("\n")}
+${optimal.bench.map((p) => squadRow(p, economics)).join("\n")}
 
-=== TRANSFER TARGETS OUTSIDE THE SQUAD ===
-${req.transferTargets.map(playerRow).join("\n")}
+=== TRANSFER TARGETS THIS MANAGER CAN AFFORD ===
+${req.transferTargets.map(targetRow).join("\n")}${omitted}
 
 Produce your gameweek analysis. Ground every claim in the numbers above.`;
 }

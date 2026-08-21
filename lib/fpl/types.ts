@@ -161,12 +161,24 @@ export interface FplPicks {
     multiplier: number; // 0 benched, 1 played, 2 captain, 3 triple captain
     is_captain: boolean;
     is_vice_captain: boolean;
+    /**
+     * What this player would actually raise if sold, in tenths of a million.
+     *
+     * Not the same as now_cost. FPL returns only half of any rise since
+     * purchase, rounded down, so a player bought at £7.0m and now worth £7.5m
+     * sells for £7.2m. Transfer advice that assumes the market price is advice
+     * that does not add up. Absent on older payloads, so callers fall back to
+     * current cost.
+     */
+    selling_price?: number;
+    purchase_price?: number;
   }>;
   entry_history: {
     event: number;
     bank: number; // tenths of a million
     value: number; // squad value incl. bank
     event_transfers: number;
+    event_transfers_cost?: number; // points deducted for extra transfers
   };
 }
 

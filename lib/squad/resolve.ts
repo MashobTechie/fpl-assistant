@@ -17,6 +17,12 @@ import {
   projectPlayer,
   type PlayerProjection,
 } from "@/lib/projections/engine";
+import {
+  buildEconomics,
+  fundableTargets,
+  type FundedTarget,
+  type SquadEconomics,
+} from "./economics";
 import { optimiseSquad, type OptimisedSquad } from "./optimizer";
 import {
   squadCost,
@@ -50,7 +56,11 @@ export interface ResolvedSquad {
   squadValue: number | null;
   squad: PlayerProjection[];
   optimal: OptimisedSquad;
-  transferTargets: PlayerProjection[];
+  transferTargets: FundedTarget[];
+  /** Bank, squad value, selling prices and club counts. */
+  economics: SquadEconomics;
+  /** Targets dropped because nothing in the squad could fund them. */
+  unaffordableTargets: number;
   playerIds: number[];
 }
 
@@ -118,6 +128,7 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let bank: number | null = null;
   let squadValue: number | null = null;
   let manual = false;
+  const sellPrices: Record<number, number> = {};
 
   if (opts.playerIds?.length) {
     const problems = validateSquadIds(opts.playerIds);
@@ -160,6 +171,14 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     playerIds = picks.picks.map((p) => p.element);
     bank = picks.entry_history.bank / 10;
     squadValue = picks.entry_history.value / 10;
+    // FPL returns only half of any rise since purchase, so what a player sells
+    // for is not what he is worth today. Advice built on market price does not
+    // add up at the point of making the transfer.
+    for (const pick of picks.picks) {
+      if (typeof pick.selling_price === "number") {
+        sellPrices[pick.element] = pick.selling_price / 10;
+      }
+    }
   } else {
     throw new SquadResolutionError(
       "Provide either an FPL team ID or a manual squad.",
@@ -205,9 +224,11 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   const allProjections = bootstrap.elements.map((e) =>
     projectPlayer(e, ctx, gameweek, horizon),
   );
-  const transferTargets = pickTransferTargets(
-    allProjections,
-    new Set(playerIds),
+  const economics = buildEconomics(squad, { bank, sellPrices });
+  const { affordable, unaffordable } = fundableTargets(
+    pickTransferTargets(allProjections, new Set(playerIds)),
+    squad,
+    economics,
   );
 
   return {
@@ -219,7 +240,9 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     squadValue,
     squad,
     optimal,
-    transferTargets,
+    transferTargets: affordable,
+    economics,
+    unaffordableTargets: unaffordable,
     playerIds,
   };
 }
