@@ -16,8 +16,29 @@ import {
   type AnalysisRequest,
 } from "./prompts";
 
-/** Resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or a local `ant` profile. */
-const client = new Anthropic();
+/**
+ * Built on first use, not at module load.
+ *
+ * The constructor reads the API key once and keeps it. Building it at module
+ * scope meant the key was captured the first time this file was imported — so
+ * editing .env.local mid-session left a client holding the old value, and the
+ * next request failed with "missing or invalid key" while the new key sat in
+ * the environment working perfectly. Resolving lazily makes an env change take
+ * effect on the next call.
+ *
+ * Resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or a local `ant` profile.
+ */
+let cachedClient: Anthropic | null = null;
+let cachedKey: string | undefined;
+
+function getClient(): Anthropic {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!cachedClient || cachedKey !== key) {
+    cachedClient = new Anthropic();
+    cachedKey = key;
+  }
+  return cachedClient;
+}
 
 /**
  * Opus 5 is the default because reasoning quality is the product. Override with
@@ -41,7 +62,7 @@ export async function analyseGameweek(
   req: AnalysisRequest,
 ): Promise<GameweekAnalysis> {
   try {
-    const response = await client.messages.parse({
+    const response = await getClient().messages.parse({
       model: MODEL,
       max_tokens: 16000,
       // Adaptive thinking: this is a genuine reasoning task, and the model
