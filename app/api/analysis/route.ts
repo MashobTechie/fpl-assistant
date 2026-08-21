@@ -8,6 +8,7 @@ import {
   SquadResolutionError,
   SQUAD_SIZE,
 } from "@/lib/squad/resolve";
+import { releaseAnalysis, reserveAnalysis } from "@/lib/ai/rate-limit";
 import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -135,6 +136,24 @@ export async function POST(request: Request) {
     }
   }
 
+  // ---- Spend control -----------------------------------------------------
+  // Past this point the request costs money, so claim the allowance first.
+  // Reserving before the call rather than counting after it is what closes the
+  // window where concurrent requests all see the same pre-call total.
+  const reservation = await reserveAnalysis(supabase);
+  if (!reservation.allowed) {
+    await releaseAnalysis(supabase);
+    return NextResponse.json(
+      {
+        error:
+          `You have used all ${reservation.limit} analyses for today. ` +
+          "The limit resets at midnight UTC. Your saved analyses are still available.",
+        limit: reservation.limit,
+      },
+      { status: 429 },
+    );
+  }
+
   // ---- Reasoning layer ---------------------------------------------------
   let analysis;
   try {
@@ -149,6 +168,7 @@ export async function POST(request: Request) {
       transferTargets: resolved.transferTargets,
     });
   } catch (err) {
+    await releaseAnalysis(supabase);
     if (err instanceof AnalystError) {
       return NextResponse.json(
         { error: err.message, retryable: err.retryable },
@@ -186,5 +206,6 @@ export async function POST(request: Request) {
     analysis,
     cached: false,
     generatedAt: new Date().toISOString(),
+    usage: { used: reservation.used, limit: reservation.limit },
   });
 }
