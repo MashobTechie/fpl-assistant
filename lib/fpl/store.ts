@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { PastSeasonTotals } from "./history";
 import type { FplBootstrap } from "./types";
 
 /**
@@ -129,4 +130,60 @@ export async function writeDailySnapshot(
   }
 
   return { capturedOn, players: rows.length };
+}
+
+// ------------------------------------------------------- last-season history
+
+/**
+ * Store one season of history for many players.
+ *
+ * Upserts on (element_code, season_name), so a re-run refreshes rather than
+ * duplicating, and a partial backfill can simply be run again.
+ */
+export async function writePlayerHistory(
+  rows: (PastSeasonTotals & { element_code: number; season_name: string; end_cost: number })[],
+): Promise<number> {
+  if (!storeConfigured() || rows.length === 0) return 0;
+  try {
+    const supabase = createAdminClient();
+    const { error } = await supabase
+      .from("fpl_player_history")
+      .upsert(rows, { onConflict: "element_code,season_name" });
+    if (error) {
+      console.error(`[store] history write failed: ${error.message}`);
+      return 0;
+    }
+    return rows.length;
+  } catch (err) {
+    console.error("[store] history write threw:", err);
+    return 0;
+  }
+}
+
+/**
+ * Last season's totals, keyed by element code.
+ *
+ * Returns an empty map when the store is unconfigured or the backfill has not
+ * run, so callers fall through to whatever the live payload holds rather than
+ * failing.
+ */
+export async function readPlayerHistory(
+  seasonName: string,
+): Promise<Map<number, PastSeasonTotals>> {
+  const out = new Map<number, PastSeasonTotals>();
+  if (!storeConfigured()) return out;
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("fpl_player_history")
+      .select("*")
+      .eq("season_name", seasonName);
+    if (error || !data) return out;
+    for (const row of data as (PastSeasonTotals & { element_code: number })[]) {
+      out.set(row.element_code, row);
+    }
+    return out;
+  } catch {
+    return out;
+  }
 }

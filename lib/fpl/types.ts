@@ -206,3 +206,38 @@ export const POSITION_NAME: Record<ElementTypeId, "GKP" | "DEF" | "MID" | "FWD">
   3: "MID",
   4: "FWD",
 };
+
+/**
+ * One previous season for a player, from /element-summary/{id}/.
+ *
+ * Keyed on element_code rather than the element id: FPL reassigns ids between
+ * seasons, and only the code follows a player.
+ */
+export interface FplPastSeason {
+  season_name: string;
+  element_code: number;
+  minutes: number;
+  starts: number;
+  goals_scored: number;
+  assists: number;
+  clean_sheets: number;
+  goals_conceded: number;
+  own_goals: number;
+  penalties_saved: number;
+  penalties_missed: number;
+  yellow_cards: number;
+  red_cards: number;
+  saves: number;
+  bonus: number;
+  bps: number;
+  defensive_contribution: number;
+  expected_goals: number | string;
+  expected_assists: number | string;
+  expected_goals_conceded: number | string;
+  total_points: number;
+  end_cost: number;
+}
+
+export interface FplElementSummary {
+  history_past: FplPastSeason[];
+}

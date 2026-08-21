@@ -7,12 +7,14 @@
  */
 
 import { cached } from "./cache";
-import { readCachedPayload, writeCachedPayload } from "./store";
+import { applyLastSeason, seasonTotalsAreEmpty } from "./history";
+import { readCachedPayload, readPlayerHistory, writeCachedPayload } from "./store";
 import type {
   FplBootstrap,
   FplElement,
   FplEntry,
   FplFixture,
+  FplElementSummary,
   FplPicks,
 } from "./types";
 
@@ -159,9 +161,44 @@ async function readThrough<T>(
  * the fastest-moving parts and neither turns over faster than that.
  */
 export function getBootstrap(): Promise<FplBootstrap> {
-  return cached("bootstrap", 3600, () =>
-    readThrough("bootstrap", 3600, getBootstrapLive),
-  );
+  return cached("bootstrap", 3600, async () => {
+    const bootstrap = await readThrough("bootstrap", 3600, getBootstrapLive);
+
+    // FPL zeroes every season total at the first deadline of a new season, and
+    // the engine reads exactly those fields — so without this every player
+    // silently becomes a price-based guess. Overlaying here keeps the whole
+    // engine, and every model built on it, working unchanged.
+    if (!seasonTotalsAreEmpty(bootstrap)) return bootstrap;
+
+    const history = await readPlayerHistory(previousSeasonName());
+    if (history.size === 0) {
+      console.warn(
+        "[fpl] season totals are zeroed and no history is stored — every " +
+          "projection will fall back to a price prior. Run /api/cron/history.",
+      );
+      return bootstrap;
+    }
+
+    const { bootstrap: restored, restored: count } = applyLastSeason(
+      bootstrap,
+      history,
+    );
+    console.info(`[fpl] season totals zeroed; restored ${count} players from history`);
+    return restored;
+  });
+}
+
+/**
+ * The season whose totals we fall back on, as FPL labels it ("2025/26").
+ *
+ * Derived from the calendar rather than stored: a Premier League season starts
+ * in August, so before then the current label still belongs to the previous
+ * campaign.
+ */
+export function previousSeasonName(now = new Date()): string {
+  const year = now.getUTCFullYear();
+  const startYear = now.getUTCMonth() >= 6 ? year - 1 : year - 2;
+  return `${startYear}/${String((startYear + 1) % 100).padStart(2, "0")}`;
 }
 
 /** All 380 fixtures with per-team FDR. Changes rarely; cached for 6h. */
@@ -222,4 +259,17 @@ export function resolveTargetGameweek(bootstrap: FplBootstrap): number {
   if (current) return current.id;
   // Season over — fall back to the last gameweek so the UI still renders.
   return bootstrap.events[bootstrap.events.length - 1]?.id ?? 1;
+}
+
+/**
+ * A player's season-by-season history.
+ *
+ * The only place FPL still exposes last season once the new one starts — the
+ * bootstrap totals are zeroed at the first deadline. One request per player, so
+ * callers should persist the result rather than fetch it per projection.
+ */
+export function getElementSummary(playerId: number): Promise<FplElementSummary> {
+  return cached(`element-summary:${playerId}`, 86_400, () =>
+    get<FplElementSummary>(`/element-summary/${playerId}/`),
+  );
 }

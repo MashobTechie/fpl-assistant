@@ -57,6 +57,13 @@ export default async function DashboardPage() {
   // rather than making the client wait for a round trip to learn the gameweek.
   const bootstrap = await getBootstrap().catch(() => null);
   const gameweek = bootstrap ? resolveTargetGameweek(bootstrap) : null;
+
+  // Once a deadline passes, that gameweek is locked and the next one is where
+  // decisions live — so the app moves on. It was doing that silently, which
+  // reads as a bug: you lock a squad and the screen jumps to a week you have
+  // not thought about yet. Both are offered instead, labelled.
+  const liveGameweek =
+    bootstrap?.events.find((e) => e.is_current && !e.finished)?.id ?? null;
   const deadline =
     bootstrap && gameweek
       ? bootstrap.events.find((e) => e.id === gameweek)?.deadline_time
@@ -76,6 +83,12 @@ export default async function DashboardPage() {
             <h1 className="mt-2.5 font-[family-name:--font-display] text-4xl font-bold uppercase leading-none tracking-tight sm:text-5xl">
               {gameweek ? `Gameweek ${gameweek}` : "Dashboard"}
             </h1>
+            {liveGameweek !== null && (
+              <p className="mt-2 text-sm text-[--color-ink-muted]">
+                Gameweek {liveGameweek} is locked and under way — this is your
+                next deadline.
+              </p>
+            )}
             {deadline && (
               <p className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-[--color-ink-muted]">
                 <span className="eyebrow rounded bg-[--color-surface-2] px-2 py-1 text-[10px] text-[--color-cyan]">
@@ -109,6 +122,8 @@ export default async function DashboardPage() {
         savedPicks={picks.length ? picks : null}
         savedSource={(savedSquad?.source as "manual" | "fpl_import") ?? null}
         savedAnalysis={savedAnalysis ?? null}
+        nextGameweek={gameweek}
+        liveGameweek={liveGameweek}
       />
     </main>
   );

@@ -33,6 +33,8 @@ export function DashboardClient({
   savedPicks,
   savedSource,
   savedAnalysis,
+  nextGameweek,
+  liveGameweek,
 }: {
   initialEntryId: number | null;
   /** The last squad this manager saved, restored on load. */
@@ -40,12 +42,19 @@ export function DashboardClient({
   savedSource: "manual" | "fpl_import" | null;
   /** An analysis already paid for. Free to show; never re-requested on load. */
   savedAnalysis: GameweekAnalysisLike | null;
+  /** The gameweek whose deadline is next — where decisions can still be made. */
+  nextGameweek: number | null;
+  /** A gameweek already locked and being played, or null between gameweeks. */
+  liveGameweek: number | null;
 }) {
   const [mode, setMode] = useState<Mode>(savedSource === "manual" ? "manual" : "import");
   const [entryId, setEntryId] = useState(initialEntryId ? String(initialEntryId) : "");
   const [restoring, setRestoring] = useState(Boolean(savedPicks));
   // Pitch first, like FPL itself: shape is what a manager checks before numbers.
   const [view, setView] = useState<View>("pitch");
+  // Default to the gameweek you can still act on. The locked one is offered
+  // beside it, because "how is my current team doing" is a fair question too.
+  const [gameweek, setGameweek] = useState<number | null>(nextGameweek);
 
   const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
@@ -55,18 +64,46 @@ export function DashboardClient({
   const [pending, setPending] = useState(false);
   const [thinking, setThinking] = useState(false);
 
+  /**
+   * Project a squad for a gameweek. Free, fast, and the actual product — so it
+   * runs on load, on submit, and whenever the gameweek changes.
+   */
+  async function runProjections(
+    body: Record<string, unknown>,
+    gw: number | null,
+  ): Promise<boolean> {
+    const res = await fetch("/api/projections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(gw !== null ? { ...body, gameweek: gw } : body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "Something went wrong.");
+      // Before a deadline there are no picks to import — steer to manual.
+      if (data.code === "picks_unavailable") setMode("manual");
+      return false;
+    }
+    setProjections(data as ProjectionsResponse);
+    return true;
+  }
+
+  // Restore on load, and re-project whenever the gameweek changes. Projections
+  // only: calling /api/analysis here would spend money on every page open, and
+  // a stored analysis arrives as a prop instead.
   useEffect(() => {
     if (!savedPicks) return;
     let cancelled = false;
 
-    // Projections only. Calling /api/analysis here would spend money every time
-    // someone opened the dashboard; a stored analysis arrives as a prop instead.
     (async () => {
       try {
         const res = await fetch("/api/projections", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerIds: savedPicks }),
+          body: JSON.stringify({
+            playerIds: savedPicks,
+            ...(gameweek !== null ? { gameweek } : {}),
+          }),
         });
         const data = await res.json();
         if (!cancelled && res.ok) setProjections(data as ProjectionsResponse);
@@ -81,7 +118,25 @@ export function DashboardClient({
     return () => {
       cancelled = true;
     };
-  }, [savedPicks]);
+  }, [savedPicks, gameweek]);
+
+  /**
+   * Switching gameweek re-projects the squad already on screen. The analysis
+   * is cleared rather than carried over: it reasons about one gameweek's
+   * numbers and would be quietly wrong against another's.
+   */
+  function changeGameweek(gw: number) {
+    setGameweek(gw);
+    setAnalysis(null);
+    setAnalysisError(null);
+    const picks =
+      projections?.squad.map((p) => p.playerId) ?? savedPicks ?? null;
+    if (!picks) return;
+    setPending(true);
+    void runProjections({ playerIds: picks }, gw).finally(() =>
+      setPending(false),
+    );
+  }
 
   /** Phase two on its own, so a restored squad can ask for an analysis. */
   async function runAnalysis(body: Record<string, unknown>) {
@@ -91,7 +146,9 @@ export function DashboardClient({
       const res = await fetch("/api/analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(
+          gameweek !== null ? { ...body, gameweek } : body,
+        ),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -113,29 +170,17 @@ export function DashboardClient({
     setProjections(null);
     setAnalysis(null);
 
-    // ---- Phase one: the maths. Fast, free, and the actual product. --------
+    let ok = false;
     try {
-      const res = await fetch("/api/projections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
-        // Before a deadline there are no picks to import — steer to manual.
-        if (data.code === "picks_unavailable") setMode("manual");
-        return;
-      }
-      setProjections(data as ProjectionsResponse);
+      ok = await runProjections(body, gameweek);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
       return;
     } finally {
       setPending(false);
     }
+    if (!ok) return;
 
-    // ---- Phase two: the reasoning. Slow, billed, and additive. ------------
     await runAnalysis(body);
   }
 
@@ -149,7 +194,7 @@ export function DashboardClient({
           Your squad
         </SectionHeading>
 
-        <div className="mb-5">
+        <div className="mb-5 flex flex-wrap gap-3">
           <SegmentedControl
             value={mode}
             onChange={setMode}
@@ -158,7 +203,27 @@ export function DashboardClient({
               { value: "manual", label: "Build manually" },
             ]}
           />
+
+          {/* Only meaningful while a gameweek is locked and being played. The
+              rest of the week there is one answer and no choice to offer. */}
+          {liveGameweek !== null && nextGameweek !== null && (
+            <SegmentedControl
+              value={String(gameweek ?? nextGameweek)}
+              onChange={(v) => changeGameweek(Number(v))}
+              options={[
+                { value: String(liveGameweek), label: `GW${liveGameweek} · locked` },
+                { value: String(nextGameweek), label: `GW${nextGameweek} · next` },
+              ]}
+            />
+          )}
         </div>
+
+        {liveGameweek !== null && gameweek === liveGameweek && (
+          <p className="mb-4 rounded-lg border border-[--color-cyan]/30 bg-[--color-cyan]/10 px-3.5 py-2.5 text-sm text-[--color-ink-muted]">
+            Gameweek {liveGameweek} is already locked, so nothing here can be
+            changed — this is what your team is projected to score.
+          </p>
+        )}
 
         {mode === "import" ? (
           <form

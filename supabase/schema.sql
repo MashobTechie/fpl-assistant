@@ -291,3 +291,53 @@ create table if not exists public.fpl_cache (
 );
 
 alter table public.fpl_cache enable row level security;
+
+-- ------------------------------------------------------- last-season history
+--
+-- FPL zeroes every season total at the first deadline of a new season. Measured
+-- 2026-08-21: within an hour of the GW1 lock, all 600 players read 0 minutes,
+-- 0 BPS, 0 xG and 0 cards. The projection engine reads those fields, so every
+-- player silently fell back to a price-based guess — Haaland and a £4.5m
+-- reserve became the same projection with the same confidence.
+--
+-- Previous seasons remain available per player at /element-summary/{id}/, but
+-- that is one request per player, so it is fetched once and kept here.
+--
+-- Keyed on element_code, not element id: FPL reassigns ids between seasons and
+-- only the code is stable.
+
+create table if not exists public.fpl_player_history (
+  element_code            integer not null,
+  season_name             text    not null,
+  minutes                 integer not null,
+  starts                  integer,
+  goals_scored            integer,
+  assists                 integer,
+  clean_sheets            integer,
+  goals_conceded          integer,
+  own_goals               integer,
+  penalties_saved         integer,
+  penalties_missed        integer,
+  yellow_cards            integer,
+  red_cards               integer,
+  saves                   integer,
+  bonus                   integer,
+  bps                     integer,
+  defensive_contribution  integer,
+  expected_goals          numeric(8, 2),
+  expected_assists        numeric(8, 2),
+  expected_goals_conceded numeric(8, 2),
+  total_points            integer,
+  end_cost                integer,
+  fetched_at              timestamptz not null default now(),
+  primary key (element_code, season_name)
+);
+
+create index if not exists fpl_history_season_idx
+  on public.fpl_player_history (season_name, element_code);
+
+alter table public.fpl_player_history enable row level security;
+
+drop policy if exists "player history is public" on public.fpl_player_history;
+create policy "player history is public"
+  on public.fpl_player_history for select using (true);
