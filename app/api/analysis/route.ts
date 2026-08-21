@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { analyseGameweek, AnalystError } from "@/lib/ai/analyst";
-import { FplApiError } from "@/lib/fpl/client";
-import {
-  resolveSquad,
-  SquadResolutionError,
-  SQUAD_SIZE,
-} from "@/lib/squad/resolve";
 import { releaseAnalysis, reserveAnalysis } from "@/lib/ai/rate-limit";
+import {
+  parseSquadRequest,
+  persistSquad,
+  requireUser,
+  resolveForRequest,
+} from "@/lib/squad/api";
 import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,92 +15,30 @@ export const runtime = "nodejs";
 // Claude reasoning over a full squad takes longer than the default budget.
 export const maxDuration = 120;
 
-const BodySchema = z
-  .object({
-    entryId: z.number().int().positive().optional(),
-    playerIds: z.array(z.number().int().positive()).length(SQUAD_SIZE).optional(),
-    gameweek: z.number().int().min(1).max(38).optional(),
-    horizon: z.number().int().min(1).max(10).default(5),
-    /** Bypass the cached analysis and pay for a fresh one. */
-    refresh: z.boolean().default(false),
-  })
-  .refine((b) => b.entryId !== undefined || b.playerIds !== undefined, {
-    message: "Provide either an FPL team ID or a 15-player squad.",
-  });
-
+/**
+ * The reasoning half. /api/projections serves the numbers in about two seconds;
+ * this takes thirty to ninety, because the analyst genuinely reasons before it
+ * answers. The dashboard calls them in that order so the wait is only ever for
+ * the commentary.
+ */
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  }
+  const auth = await requireUser(supabase);
+  if ("response" in auth) return auth.response;
+  const user = auth.user;
 
-  let body: z.infer<typeof BodySchema>;
-  try {
-    body = BodySchema.parse(await request.json());
-  } catch (err) {
-    const message =
-      err instanceof z.ZodError
-        ? err.issues.map((i) => i.message).join("; ")
-        : "Request body must be JSON.";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  const parsed = await parseSquadRequest(request);
+  if ("response" in parsed) return parsed.response;
+  const body = parsed.body;
 
-  // ---- Projections (deterministic, cheap, always recomputed) -------------
-  let resolved;
-  try {
-    resolved = await resolveSquad({
-      entryId: body.entryId,
-      playerIds: body.playerIds,
-      gameweek: body.gameweek,
-      horizon: body.horizon,
-    });
-  } catch (err) {
-    if (err instanceof SquadResolutionError) {
-      return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: err.code === "unknown_entry" ? 404 : 400 },
-      );
-    }
-    if (err instanceof FplApiError) {
-      return NextResponse.json(
-        { error: "The FPL API is not responding. Try again shortly." },
-        { status: 503 },
-      );
-    }
-    throw err;
-  }
+  const result = await resolveForRequest(body);
+  if ("response" in result) return result.response;
+  const { resolved } = result;
 
-  // ---- Persist the squad -------------------------------------------------
-  // Failing here is not cosmetic: without a squad row there is no cache key,
-  // so every subsequent refresh would silently pay for a fresh Opus call.
-  // Fail loudly rather than bill the user for a broken cache.
-  const { data: squadRow, error: squadError } = await supabase
-    .from("squads")
-    .upsert(
-      {
-        user_id: user.id,
-        gameweek: resolved.gameweek,
-        fpl_entry_id: body.entryId ?? null,
-        picks: resolved.playerIds,
-        bank: resolved.bank,
-        squad_value: resolved.squadValue,
-        source: body.entryId ? "fpl_import" : "manual",
-      },
-      { onConflict: "user_id,gameweek" },
-    )
-    .select("id")
-    .single();
-
-  if (squadError || !squadRow) {
-    return NextResponse.json(
-      { error: "Could not save the squad, so the analysis was not run." },
-      { status: 500 },
-    );
-  }
+  const stored = await persistSquad(supabase, user.id, resolved, body.entryId);
+  if ("response" in stored) return stored.response;
+  const squadRow = { id: stored.squadId };
 
   // ---- Reuse a cached analysis unless asked not to -----------------------
   // An LLM call per dashboard refresh would make the product expensive for no

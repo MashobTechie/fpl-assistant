@@ -26,6 +26,18 @@ export interface PlayersResponse {
   players: PlayerListItem[];
 }
 
+/** The fast half: everything the deterministic engine knows, no LLM involved. */
+export interface ProjectionsResponse {
+  gameweek: number;
+  horizon: number;
+  squad: PlayerProjection[];
+  optimal: OptimisedSquad;
+  managerName: string | null;
+  teamName: string | null;
+  bank: number | null;
+  squadValue: number | null;
+}
+
 export interface AnalysisResponse {
   gameweek: number;
   horizon: number;

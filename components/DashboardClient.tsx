@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { AnalysisResponse } from "@/lib/types";
+import type { AnalysisResponse, ProjectionsResponse } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { LineupTable } from "./LineupTable";
 import { SquadBuilder } from "./SquadBuilder";
@@ -10,18 +10,41 @@ import { Button, Card, SectionHeading, SegmentedControl } from "./ui";
 
 type Mode = "import" | "manual";
 
+/**
+ * Two requests, not one.
+ *
+ * The projection engine answers in about two seconds; the analyst takes thirty
+ * to ninety because it genuinely reasons first. Waiting on the second to show
+ * the first had it backwards — the numbers are the product, and a manager
+ * staring at "Analysing…" for a minute cannot tell a slow model from a crash.
+ *
+ * So the lineup renders as soon as the maths lands, and the written analysis
+ * fills in underneath when it arrives. If the analyst fails or the daily
+ * allowance is gone, the projections are still there and still useful.
+ */
 export function DashboardClient({ initialEntryId }: { initialEntryId: number | null }) {
   const [mode, setMode] = useState<Mode>("import");
   const [entryId, setEntryId] = useState(initialEntryId ? String(initialEntryId) : "");
-  const [result, setResult] = useState<AnalysisResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
 
-  async function analyse(body: Record<string, unknown>) {
+  const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+
+  const [error, setError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [thinking, setThinking] = useState(false);
+
+  async function run(body: Record<string, unknown>) {
     setPending(true);
     setError(null);
+    setAnalysisError(null);
+    setProjections(null);
+    setAnalysis(null);
+
+    // ---- Phase one: the maths. Fast, free, and the actual product. --------
+    let projected: ProjectionsResponse;
     try {
-      const res = await fetch("/api/analysis", {
+      const res = await fetch("/api/projections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -33,18 +56,40 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
         if (data.code === "picks_unavailable") setMode("manual");
         return;
       }
-      setResult(data as AnalysisResponse);
+      projected = data as ProjectionsResponse;
+      setProjections(projected);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
+      return;
     } finally {
       setPending(false);
+    }
+
+    // ---- Phase two: the reasoning. Slow, billed, and additive. ------------
+    setThinking(true);
+    try {
+      const res = await fetch("/api/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAnalysisError(data.error ?? "The analyst could not be reached.");
+        return;
+      }
+      setAnalysis(data as AnalysisResponse);
+    } catch {
+      setAnalysisError("Lost the connection while the analyst was working.");
+    } finally {
+      setThinking(false);
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
       <Card accent className="p-5 sm:p-6">
-        <SectionHeading hint={result ? `GW${result.gameweek}` : undefined}>
+        <SectionHeading hint={projections ? `GW${projections.gameweek}` : undefined}>
           Your squad
         </SectionHeading>
 
@@ -68,14 +113,14 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
                 setError("Enter a valid FPL team ID — digits only.");
                 return;
               }
-              void analyse({ entryId: id });
+              void run({ entryId: id });
             }}
             className="flex flex-col gap-3"
           >
             <label htmlFor="entryId" className="eyebrow text-[11px] text-[--color-ink-faint]">
               FPL team ID
-              <span className="ml-1.5 normal-case tracking-normal text-[--color-ink-faint]">
-                the number in your points-page URL
+              <span className="ml-1.5 font-normal normal-case tracking-normal">
+                — the number in your points-page URL
               </span>
             </label>
             <div className="flex gap-2">
@@ -88,63 +133,79 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
                 className="numeric min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-3 text-lg font-semibold outline-none transition focus:border-[--color-cyan]"
               />
               <Button type="submit" disabled={pending || !entryId} className="shrink-0">
-                {pending ? "Analysing…" : "Analyse"}
+                {pending ? "Projecting…" : "Analyse"}
               </Button>
             </div>
           </form>
         ) : (
-          <SquadBuilder
-            pending={pending}
-            onSubmit={(playerIds) => void analyse({ playerIds })}
-          />
+          <SquadBuilder pending={pending} onSubmit={(playerIds) => void run({ playerIds })} />
         )}
 
         {error && (
-          <div
+          <p
             role="alert"
-            className="mt-4 rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-4 py-3"
+            className="mt-4 rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-3 text-sm leading-relaxed text-[--color-pink]"
           >
-            <p className="text-sm leading-relaxed text-[--color-ink]">{error}</p>
-          </div>
+            {error}
+          </p>
         )}
       </Card>
 
-      {result && (
-        <>
-          <Card className="p-5 sm:p-6">
-            <SectionHeading
-              hint={`${result.optimal.formationLabel} · ${result.optimal.expectedPoints.toFixed(1)} xPts`}
-            >
-              Projected lineup
-            </SectionHeading>
-            <LineupTable
-              startingXI={result.optimal.startingXI}
-              bench={result.optimal.bench}
-              gameweek={result.gameweek}
-              horizon={result.horizon}
-              captainId={result.analysis.captain.playerId}
-              viceId={result.analysis.viceCaptain.playerId}
-            />
-          </Card>
+      {projections && (
+        <Card className="p-5 sm:p-6">
+          <SectionHeading
+            hint={`${projections.optimal.formationLabel} · ${projections.optimal.expectedPoints.toFixed(1)} xPts`}
+          >
+            Projected lineup
+          </SectionHeading>
+          <LineupTable
+            startingXI={projections.optimal.startingXI}
+            bench={projections.optimal.bench}
+            gameweek={projections.gameweek}
+            horizon={projections.horizon}
+            captainId={analysis?.analysis.captain.playerId}
+            viceId={analysis?.analysis.viceCaptain.playerId}
+          />
+        </Card>
+      )}
 
+      {thinking && <AnalystProgress />}
+
+      {analysisError && !thinking && (
+        <Card className="p-5">
+          <p role="alert" className="text-sm leading-relaxed text-[--color-pink]">
+            {analysisError}
+          </p>
+          <p className="mt-2 text-sm text-[--color-ink-muted]">
+            The projections above are unaffected — they are computed here, not by
+            the analyst.
+          </p>
+        </Card>
+      )}
+
+      {analysis && projections && (
+        <>
           <AnalysisPanel
-            analysis={result.analysis}
-            gameweek={result.gameweek}
-            optimalPoints={result.optimal.expectedPoints}
-            formation={result.optimal.formationLabel}
-            cached={result.cached}
-            generatedAt={result.generatedAt}
+            analysis={analysis.analysis}
+            gameweek={analysis.gameweek}
+            optimalPoints={projections.optimal.expectedPoints}
+            formation={projections.optimal.formationLabel}
+            cached={analysis.cached}
+            generatedAt={analysis.generatedAt}
           />
 
-          {result.cached && (
+          {analysis.cached && (
             <Button
               variant="ghost"
-              disabled={pending}
+              disabled={thinking}
               onClick={() =>
-                void analyse(
+                void run(
                   mode === "import"
                     ? { entryId: Number(entryId), refresh: true }
-                    : { playerIds: result.squad.map((p) => p.playerId), refresh: true },
+                    : {
+                        playerIds: projections.squad.map((p) => p.playerId),
+                        refresh: true,
+                      },
                 )
               }
               className="self-start text-sm"
@@ -155,5 +216,59 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * An honest wait.
+ *
+ * A spinner with no duration reads as broken after about fifteen seconds. This
+ * counts up and says what is happening, because the wait is real and the reason
+ * for it is defensible: the model is reasoning, not hanging.
+ */
+function AnalystProgress() {
+  const [seconds, setSeconds] = useState(0);
+
+  // Date.now() belongs in the effect, not the render pass: React treats reading
+  // the clock while rendering as impure, and it is.
+  useEffect(() => {
+    const started = Date.now();
+    const t = setInterval(
+      () => setSeconds(Math.round((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[--color-cyan]"
+        />
+        <p className="text-sm font-semibold text-[--color-ink]">
+          The analyst is reading your projections
+        </p>
+        <span className="numeric ml-auto text-sm font-bold text-[--color-cyan]">
+          {seconds}s
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-relaxed text-[--color-ink-muted]">
+        {seconds < 30
+          ? "Usually 30–90 seconds. It reasons through captaincy, bench order and risks before answering."
+          : "Still working. Longer squads and tighter calls take more thinking."}
+      </p>
+      <div
+        className="mt-3 h-1 overflow-hidden rounded-full bg-[--color-surface-3]"
+        role="progressbar"
+        aria-label="Analysis progress"
+      >
+        <div
+          className="pl-rule h-full transition-[width] duration-1000 ease-linear"
+          style={{ width: `${Math.min(95, (seconds / 60) * 100)}%` }}
+        />
+      </div>
+    </Card>
   );
 }
