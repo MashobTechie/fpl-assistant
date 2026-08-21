@@ -11,23 +11,23 @@ function CaptainCard({
   role: "Captain" | "Vice-captain";
 }) {
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface-2] p-4">
+    <div className="rounded-xl border border-[--color-border] bg-[--color-surface-2] p-4 sm:p-5">
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-[--color-ink-faint]">
+        <span className="eyebrow text-[10px] text-[--color-cyan]">
           {role}
         </span>
       </div>
-      <p className="mt-1 text-lg font-bold text-[--color-accent]">{pick.name}</p>
+      <p className="mt-1.5 font-[family-name:--font-display] text-3xl font-bold uppercase leading-none tracking-tight text-[--color-accent]">{pick.name}</p>
       <p className="mt-2 text-sm leading-relaxed text-[--color-ink-muted]">
         {pick.reasoning}
       </p>
       <dl className="mt-3 space-y-1.5 text-xs">
         <div className="flex gap-2">
-          <dt className="shrink-0 font-semibold text-[--color-ink-faint]">Ceiling</dt>
+          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-[--color-ink-faint]">Ceiling</dt>
           <dd className="text-[--color-ink-muted]">{pick.ceiling}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="shrink-0 font-semibold text-[--color-ink-faint]">Risk</dt>
+          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-[--color-ink-faint]">Risk</dt>
           <dd className="text-[--color-ink-muted]">{pick.risk}</dd>
         </div>
       </dl>
@@ -119,7 +119,7 @@ export function AnalysisPanel({
                 className="rounded-lg border border-[--color-warn]/30 bg-[--color-warn]/5 p-3 text-sm"
               >
                 <p className="font-medium">
-                  <span className="text-[--color-danger]">{c.benchPlayerName}</span>
+                  <span className="text-[--color-pink]">{c.benchPlayerName}</span>
                   {" → bench, "}
                   <span className="text-[--color-accent]">{c.startPlayerName}</span>
                   {" → start"}
@@ -179,7 +179,7 @@ export function AnalysisPanel({
                 className="rounded-lg border border-[--color-border] bg-[--color-surface-2] p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[--color-danger]">{t.outName}</span>
+                  <span className="text-[--color-pink]">{t.outName}</span>
                   <span className="text-[--color-ink-faint]">→</span>
                   <span className="font-semibold text-[--color-accent]">{t.inName}</span>
                   <span className="rounded bg-[--color-surface] px-1.5 py-0.5 text-[11px] text-[--color-ink-faint]">

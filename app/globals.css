@@ -1,35 +1,58 @@
 @import "tailwindcss";
 
 /**
- * Dark, data-dense, mobile-first. The palette nods to FPL's purple and green
- * without imitating the official product.
+ * Premier League livery.
+ *
+ * The palette is the league's own: deep purple as the ground, with the pink and
+ * cyan that pair across every PL graphic, and FPL's mint green reserved for
+ * actions. Colour carries meaning here rather than decoration — mint always
+ * means "good or actionable", pink always means "something is wrong", and cyan
+ * is information. Nothing else gets to be bright.
+ *
+ * Committed to a single dark theme on purpose: FPL is a dark product and a
+ * half-hearted light mode would read as neither.
  */
 @theme {
-  --color-base: #0a0910;
-  --color-surface: #12101b;
-  --color-surface-2: #1a1726;
-  --color-border: #2a2438;
+  /* Ground and elevation — four steps of purple, not grey. */
+  --color-base: #16001a;
+  --color-surface: #250a2b;
+  --color-surface-2: #33103a;
+  --color-surface-3: #41174a;
+  --color-border: #4d2157;
+  --color-border-bright: #6b3277;
 
-  --color-ink: #f2f0f7;
-  --color-ink-muted: #a29cb8;
-  --color-ink-faint: #6f6885;
+  --color-ink: #ffffff;
+  --color-ink-muted: #cdb2d6;
+  --color-ink-faint: #9a7ba6;
 
-  --color-accent: #00e87b;
-  --color-accent-dim: #0a9d57;
-  --color-violet: #a855f7;
+  /* Actions and positive states. FPL's signature mint. */
+  --color-accent: #00ff87;
+  --color-accent-dim: #00cc6c;
+  --color-accent-deep: #007a41;
 
-  --color-warn: #fbbf24;
-  --color-danger: #f87171;
+  /* Information, links, secondary emphasis. */
+  --color-cyan: #04f5ff;
+  --color-cyan-dim: #00c2cc;
 
-  /* Fixture difficulty, FDR 1 (easiest) to 5 (hardest). */
-  --color-fdr-1: #0e7a4a;
-  --color-fdr-2: #16a34a;
-  --color-fdr-3: #4b4660;
-  --color-fdr-4: #b45309;
-  --color-fdr-5: #b91c1c;
+  /* Alerts. The league's pink doing the job red usually does. */
+  --color-pink: #ff2882;
+  --color-pink-dim: #cc1c66;
+  --color-danger: #ff2882;
+  --color-warn: #ffb800;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  /**
+   * Fixture difficulty, 1 (easiest) to 5 (hardest) — FPL's own scale, which
+   * managers already read fluently. Deliberately not a red/green ramp: 3 is
+   * neutral purple so the eye only catches genuinely easy or hard runs.
+   */
+  --color-fdr-1: #00ff87;
+  --color-fdr-2: #01c878;
+  --color-fdr-3: #4a3d57;
+  --color-fdr-4: #ff2882;
+  --color-fdr-5: #9e0038;
+
+  --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow-condensed), var(--font-barlow), sans-serif;
 }
 
 html {
@@ -41,16 +64,61 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+
+  /* Two faint washes of the brand colours, so the ground is not flat black. */
+  background-image:
+    radial-gradient(60rem 40rem at 15% -10%, rgba(255, 40, 130, 0.13), transparent 60%),
+    radial-gradient(50rem 36rem at 95% 0%, rgba(4, 245, 255, 0.09), transparent 60%);
+  background-attachment: fixed;
 }
 
-/* Numbers must line up in tables — tabular figures, always. */
+/* Numbers must line up in tables. Barlow has proper tabular figures, so this
+   keeps data in the brand face instead of dropping to a mismatched mono. */
 .numeric {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 /* Wide tables scroll inside their own container, never the page. */
 .scroll-x {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-bright) transparent;
+}
+
+/* Condensed uppercase — the league's own label voice. */
+.eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+/* The pink-to-cyan sweep that appears across Premier League graphics. Used
+   sparingly: one rule per screen, never as a background for text. */
+.pl-rule {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-pink) 0%,
+    var(--color-accent) 45%,
+    var(--color-cyan) 100%
+  );
+}
+
+/* Focus is visible everywhere, in a colour that never means "error". */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

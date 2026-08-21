@@ -113,7 +113,7 @@ export function SquadBuilder({
 
   if (loadError) {
     return (
-      <p className="text-sm text-[--color-danger]">
+      <p className="rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-3 text-sm text-[--color-pink]">
         Couldn&apos;t load players: {loadError}
       </p>
     );
@@ -133,10 +133,12 @@ export function SquadBuilder({
               key={pos}
               type="button"
               onClick={() => setPosition(pos)}
-              className={`numeric rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              className={`numeric rounded-lg border px-2.5 py-1.5 text-xs font-bold transition ${
                 position === pos
-                  ? "border-[--color-accent] text-[--color-accent]"
-                  : "border-[--color-border] text-[--color-ink-muted]"
+                  ? "border-[--color-cyan] bg-[--color-cyan]/10 text-[--color-cyan]"
+                  : done
+                    ? "border-[--color-accent]/50 text-[--color-accent]"
+                    : "border-[--color-border] text-[--color-ink-muted] hover:border-[--color-border-bright]"
               }`}
             >
               {pos} {counts[pos]}/{SQUAD_QUOTA[pos]}
@@ -144,12 +146,17 @@ export function SquadBuilder({
             </button>
           );
         })}
-        <span
-          className={`numeric ml-auto text-xs font-semibold ${
-            overBudget ? "text-[--color-danger]" : "text-[--color-ink-muted]"
-          }`}
-        >
-          £{spend.toFixed(1)}m / {SQUAD_BUDGET.toFixed(1)}m
+        <span className="ml-auto text-right">
+          <span className="eyebrow block text-[9px] text-[--color-ink-faint]">
+            {overBudget ? "Over budget" : "Remaining"}
+          </span>
+          <span
+            className={`numeric block text-sm font-bold ${
+              overBudget ? "text-[--color-pink]" : "text-[--color-accent]"
+            }`}
+          >
+            £{Math.abs(SQUAD_BUDGET - spend).toFixed(1)}m
+          </span>
         </span>
       </div>
 
@@ -158,7 +165,7 @@ export function SquadBuilder({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={`Search ${position} by name or team…`}
-        className="rounded-lg border border-[--color-border] bg-[--color-surface-2] px-3 py-2 text-sm outline-none focus:border-[--color-accent]"
+        className="rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-2.5 text-sm outline-none transition focus:border-[--color-cyan]"
       />
 
       <ul className="max-h-80 divide-y divide-[--color-border] overflow-y-auto rounded-lg border border-[--color-border]">
@@ -180,7 +187,7 @@ export function SquadBuilder({
                   <span className="flex items-center gap-1.5">
                     <span className="truncate font-medium">{p.name}</span>
                     {p.status !== "a" && (
-                      <span className="text-[--color-danger]" title={p.risks[0]}>
+                      <span className="text-[--color-pink]" title={p.risks[0]}>
                         ⚠
                       </span>
                     )}
@@ -197,10 +204,10 @@ export function SquadBuilder({
                     <FdrPill key={i} opponent={f.opponent} home={f.home} fdr={f.fdr} />
                   ))}
                 </span>
-                <span className="numeric w-12 text-right font-semibold">
+                <span className="numeric w-12 text-right font-bold text-[--color-accent]">
                   {p.horizon.toFixed(1)}
                 </span>
-                <span className="numeric w-4 text-center text-[--color-accent]">
+                <span className="numeric w-4 text-center font-bold text-[--color-accent]">
                   {isSelected ? "✓" : ""}
                 </span>
               </button>
@@ -218,7 +225,7 @@ export function SquadBuilder({
         type="button"
         disabled={!complete || overBudget || pending}
         onClick={() => onSubmit(selected.map((p) => p.id))}
-        className="rounded-lg bg-[--color-accent] px-4 py-2.5 font-semibold text-[--color-base] transition hover:bg-[--color-accent-dim] disabled:opacity-50"
+        className="rounded-lg bg-[--color-accent] px-4 py-3 font-semibold text-[--color-base] transition hover:bg-[--color-accent-dim] active:translate-y-px disabled:opacity-50"
       >
         {pending
           ? "Analysing…"

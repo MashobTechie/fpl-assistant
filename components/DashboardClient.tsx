@@ -6,7 +6,7 @@ import type { AnalysisResponse } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { LineupTable } from "./LineupTable";
 import { SquadBuilder } from "./SquadBuilder";
-import { Card, SectionHeading } from "./ui";
+import { Button, Card, SectionHeading, SegmentedControl } from "./ui";
 
 type Mode = "import" | "manual";
 
@@ -43,26 +43,20 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
 
   return (
     <div className="flex flex-col gap-6">
-      <Card className="p-5">
+      <Card accent className="p-5 sm:p-6">
         <SectionHeading hint={result ? `GW${result.gameweek}` : undefined}>
           Your squad
         </SectionHeading>
 
-        <div className="mb-4 flex gap-2">
-          {(["import", "manual"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-                mode === m
-                  ? "border-[--color-accent] text-[--color-accent]"
-                  : "border-[--color-border] text-[--color-ink-muted]"
-              }`}
-            >
-              {m === "import" ? "Import by FPL ID" : "Build manually"}
-            </button>
-          ))}
+        <div className="mb-5">
+          <SegmentedControl
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "import", label: "Import by FPL ID" },
+              { value: "manual", label: "Build manually" },
+            ]}
+          />
         </div>
 
         {mode === "import" ? (
@@ -78,10 +72,10 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
             }}
             className="flex flex-col gap-3"
           >
-            <label htmlFor="entryId" className="text-sm text-[--color-ink-muted]">
+            <label htmlFor="entryId" className="eyebrow text-[11px] text-[--color-ink-faint]">
               FPL team ID
-              <span className="ml-1 text-[--color-ink-faint]">
-                — the number in your points-page URL
+              <span className="ml-1.5 normal-case tracking-normal text-[--color-ink-faint]">
+                the number in your points-page URL
               </span>
             </label>
             <div className="flex gap-2">
@@ -91,15 +85,11 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
                 value={entryId}
                 onChange={(e) => setEntryId(e.target.value.replace(/\D/g, ""))}
                 placeholder="1234567"
-                className="numeric min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-surface-2] px-3 py-2.5 outline-none focus:border-[--color-accent]"
+                className="numeric min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-3 text-lg font-semibold outline-none transition focus:border-[--color-cyan]"
               />
-              <button
-                type="submit"
-                disabled={pending || !entryId}
-                className="shrink-0 rounded-lg bg-[--color-accent] px-4 py-2.5 font-semibold text-[--color-base] transition hover:bg-[--color-accent-dim] disabled:opacity-50"
-              >
+              <Button type="submit" disabled={pending || !entryId} className="shrink-0">
                 {pending ? "Analysing…" : "Analyse"}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
@@ -110,15 +100,18 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
         )}
 
         {error && (
-          <p role="alert" className="mt-3 text-sm text-[--color-danger]">
-            {error}
-          </p>
+          <div
+            role="alert"
+            className="mt-4 rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-4 py-3"
+          >
+            <p className="text-sm leading-relaxed text-[--color-ink]">{error}</p>
+          </div>
         )}
       </Card>
 
       {result && (
         <>
-          <Card className="p-5">
+          <Card className="p-5 sm:p-6">
             <SectionHeading
               hint={`${result.optimal.formationLabel} · ${result.optimal.expectedPoints.toFixed(1)} xPts`}
             >
@@ -144,8 +137,8 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
           />
 
           {result.cached && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               disabled={pending}
               onClick={() =>
                 void analyse(
@@ -154,10 +147,10 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
                     : { playerIds: result.squad.map((p) => p.playerId), refresh: true },
                 )
               }
-              className="self-start rounded-lg border border-[--color-border] px-4 py-2 text-sm text-[--color-ink-muted] transition hover:border-[--color-accent] hover:text-[--color-accent]"
+              className="self-start text-sm"
             >
               Regenerate analysis
-            </button>
+            </Button>
           )}
         </>
       )}
