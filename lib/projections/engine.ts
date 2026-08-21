@@ -72,6 +72,12 @@ export interface ProjectionContext {
   teamsById: Map<number, FplTeam>;
   maxCostByPosition: Record<ElementTypeId, number>;
   fixturesByTeam: Map<number, FplFixture[]>;
+  /**
+   * Per-player multiplier for competition at their club, 0-1. 1 means the
+   * squad's projected minutes fit inside what a match actually offers; below 1
+   * means the club is carrying more minutes than it can give out.
+   */
+  depthFactorByPlayer: Map<number, number>;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -89,6 +95,80 @@ function poissonAtLeast(lambda: number, k: number): number {
     cumulative += term;
   }
   return clamp(1 - cumulative, 0, 1);
+}
+
+/**
+ * Share a club's available minutes among the players competing for them.
+ *
+ * Projecting each player from his own history alone lets a squad's minutes sum
+ * to more than a match contains, which is how three strikers all end up
+ * projected to start. This redistributes the excess.
+ *
+ * Not a flat scale-down: minutes are concentrated on the players whose history
+ * already says they start, because signing a striker does not take equal
+ * minutes from the first choice and the fourth. Demand is weighted by
+ * availability, so an injured player stops consuming a share of the squeeze and
+ * his team-mates' projections rise — which is the correct behaviour and falls
+ * out of the same arithmetic.
+ *
+ * Returns a multiplier per player rather than a minutes figure, so the caller's
+ * existing availability and status handling stays untouched.
+ */
+function allocateClubMinutes(
+  squad: { id: number; rawMinutes: number; availability: number }[],
+): Map<number, number> {
+  const factors = new Map<number, number>();
+
+  // Demand a fit squad would place on the match, discounted by availability.
+  const effective = squad.map((p) => ({
+    ...p,
+    demand: p.rawMinutes * p.availability,
+  }));
+  const totalDemand = effective.reduce((sum, p) => sum + p.demand, 0);
+
+  // A thin squad is left alone: there is no competition to model.
+  if (totalDemand <= K.CLUB_MINUTES_PER_MATCH || totalDemand <= 0) {
+    for (const p of squad) factors.set(p.id, 1);
+    return factors;
+  }
+
+  // Water-filling: share the budget by concentrated weight, lock anyone who
+  // would exceed a full match at 90, and re-share what is left.
+  const locked = new Map<number, number>();
+  const allocated = new Map<number, number>();
+
+  for (let pass = 0; pass < 6; pass++) {
+    const open = effective.filter((p) => !locked.has(p.id));
+    const budget =
+      K.CLUB_MINUTES_PER_MATCH -
+      [...locked.values()].reduce((sum, m) => sum + m, 0);
+
+    if (open.length === 0 || budget <= 0) break;
+
+    const weights = open.map((p) => Math.pow(p.demand, K.DEPTH_CONCENTRATION));
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+    if (weightSum <= 0) break;
+
+    let overflowed = false;
+    open.forEach((p, i) => {
+      const share = (budget * weights[i]) / weightSum;
+      if (share > 90) {
+        locked.set(p.id, 90);
+        overflowed = true;
+      } else {
+        allocated.set(p.id, share);
+      }
+    });
+    if (!overflowed) break;
+  }
+
+  for (const p of effective) {
+    const minutes = locked.get(p.id) ?? allocated.get(p.id) ?? 0;
+    // Below the threshold the player is unavailable anyway, and dividing by a
+    // near-zero demand would produce a meaningless multiplier.
+    factors.set(p.id, p.demand < 0.01 ? 1 : clamp(minutes / p.demand, 0, 1));
+  }
+  return factors;
 }
 
 export function buildContext(
@@ -122,7 +202,42 @@ export function buildContext(
     list.sort((a, b) => (a.event ?? 0) - (b.event ?? 0));
   }
 
-  return { completedGameweeks, teamsById, maxCostByPosition, fixturesByTeam };
+  // Depth needs the rest of the context to exist first: raw minutes depend on
+  // maxCostByPosition for players with no league history.
+  const partial: ProjectionContext = {
+    completedGameweeks,
+    teamsById,
+    maxCostByPosition,
+    fixturesByTeam,
+    depthFactorByPlayer: new Map(),
+  };
+
+  const byTeam = new Map<number, FplElement[]>();
+  for (const el of bootstrap.elements) {
+    const list = byTeam.get(el.team) ?? [];
+    list.push(el);
+    byTeam.set(el.team, list);
+  }
+
+  const depthFactorByPlayer = new Map<number, number>();
+  for (const squad of byTeam.values()) {
+    const rows = squad.map((el) => ({
+      id: el.id,
+      rawMinutes: baseMinutesPerMatch(el, partial).minutes,
+      availability: availabilityOf(el),
+    }));
+    for (const [id, factor] of allocateClubMinutes(rows)) {
+      depthFactorByPlayer.set(id, factor);
+    }
+  }
+
+  return {
+    completedGameweeks,
+    teamsById,
+    maxCostByPosition,
+    fixturesByTeam,
+    depthFactorByPlayer,
+  };
 }
 
 /**
@@ -298,6 +413,7 @@ function assessRisks(
   base: { minutes: number; basis: DataBasis },
   perFixture: FixtureProjection[],
   availability: number,
+  depthFactor: number,
 ): string[] {
   const risks: string[] = [];
 
@@ -317,6 +433,15 @@ function assessRisks(
   if (base.minutes < 60 && base.basis !== "price_prior") {
     risks.push(`Rotation risk — averaged ${Math.round(base.minutes)} min per match`);
   }
+  // A squeeze the player's own history cannot show: the club has more minutes
+  // committed than a match contains, so someone loses out.
+  if (depthFactor < 0.85) {
+    risks.push(
+      `Competition for places — squad depth cuts projected minutes by ${Math.round(
+        (1 - depthFactor) * 100,
+      )}%`,
+    );
+  }
   if (perFixture.length === 0) {
     risks.push("Blank gameweek — no fixture scheduled");
   } else {
@@ -335,8 +460,14 @@ export function projectPlayer(
   fromGameweek: number,
   horizon: number,
 ): PlayerProjection {
-  const base = baseMinutesPerMatch(player, ctx);
+  const raw = baseMinutesPerMatch(player, ctx);
   const availability = availabilityOf(player);
+
+  // Competition for places. Applied to the minutes rather than to the points so
+  // that everything downstream — appearance odds, the 60-minute threshold,
+  // clean sheets, defensive contribution — moves with it consistently.
+  const depthFactor = ctx.depthFactorByPlayer.get(player.id) ?? 1;
+  const base = { ...raw, minutes: raw.minutes * depthFactor };
 
   const upcoming = (ctx.fixturesByTeam.get(player.team) ?? []).filter(
     (f) =>
@@ -376,7 +507,7 @@ export function projectPlayer(
     totalExpectedPoints,
     nextGameweekPoints,
     pointsPerMillion: cost > 0 ? totalExpectedPoints / cost : 0,
-    risks: assessRisks(player, base, perFixture, availability),
+    risks: assessRisks(player, base, perFixture, availability, depthFactor),
     onPenalties: player.penalties_order === 1,
   };
 }

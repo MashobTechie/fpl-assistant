@@ -119,3 +119,29 @@ export const NO_HISTORY_XA90: Record<ElementTypeId, number> = {
 
 /** A full Premier League season, used to average pre-season totals. */
 export const GAMES_IN_SEASON = 38;
+
+// ------------------------------------------------------- competition for places
+
+/**
+ * Minutes a club actually has to give out in one match: eleven shirts, ninety
+ * minutes each.
+ *
+ * This is a hard physical fact, and the projection engine was ignoring it.
+ * Every player was projected from his own history alone, so a squad's minutes
+ * summed to more than exist — measured against real 2025/26 data, Manchester
+ * City's current squad played 41,244 minutes last season against the 37,620 a
+ * season contains, and Chelsea's 42,266. Without this constraint three
+ * strikers can each be projected to start.
+ */
+export const CLUB_MINUTES_PER_MATCH = 11 * 90;
+
+/**
+ * How sharply a squeezed squad concentrates its minutes on the likely starters.
+ *
+ * 1.0 would scale every player at a club by the same factor, which is wrong:
+ * signing a striker does not take equal minutes from the first choice and the
+ * fourth. Above 1.0 the established starter keeps most of his, and the fringe
+ * player absorbs the squeeze. 1.6 is a prior, not a fitted value — tune it here
+ * once real minutes accumulate.
+ */
+export const DEPTH_CONCENTRATION = 1.6;
