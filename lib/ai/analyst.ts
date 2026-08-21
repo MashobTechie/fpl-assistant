@@ -48,6 +48,33 @@ function getClient(): Anthropic {
  */
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5";
 
+/**
+ * Models that predate adaptive thinking and need an explicit token budget.
+ *
+ * The two forms are mutually exclusive, and both failures are hard 400s:
+ * sending `adaptive` to one of these returns "adaptive thinking is not
+ * supported on this model", while sending `budget_tokens` to Opus 5 or any
+ * other current model is rejected the other way. Unknown models default to
+ * adaptive, which is the direction every new release has taken.
+ */
+const BUDGETED_THINKING_MODELS = [
+  "claude-haiku-4-5",
+  "claude-sonnet-4-5",
+  "claude-3-",
+];
+
+/**
+ * Enough budget to reason over fifteen players and a transfer shortlist without
+ * approaching max_tokens, which the API requires it to stay under.
+ */
+const THINKING_BUDGET_TOKENS = 4000;
+
+function thinkingFor(model: string) {
+  return BUDGETED_THINKING_MODELS.some((prefix) => model.startsWith(prefix))
+    ? ({ type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS } as const)
+    : ({ type: "adaptive" } as const);
+}
+
 export class AnalystError extends Error {
   constructor(
     message: string,
@@ -65,9 +92,10 @@ export async function analyseGameweek(
     const response = await getClient().messages.parse({
       model: MODEL,
       max_tokens: 16000,
-      // Adaptive thinking: this is a genuine reasoning task, and the model
-      // decides how much depth each squad warrants.
-      thinking: { type: "adaptive" },
+      // This is a genuine reasoning task, so thinking stays on. The form
+      // depends on the model: current models take adaptive and reject a token
+      // budget, older ones require the budget and reject adaptive.
+      thinking: thinkingFor(MODEL),
       // The system prompt never varies, so it stays a warm cache prefix.
       system: [
         {
