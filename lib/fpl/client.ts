@@ -151,6 +151,24 @@ export async function getPicks(
   }
 }
 
+/**
+ * The most recent gameweek whose deadline has passed, or null before the first
+ * deadline of a season.
+ *
+ * This is deliberately NOT the gameweek being analysed. A manager's picks are
+ * published only once a deadline locks them, so the squad you own right now is
+ * the one from the last locked gameweek, while the gameweek you want advice
+ * about is the next one. Asking FPL for the picks of the gameweek being
+ * analysed asks for the one set of picks guaranteed not to exist yet.
+ */
+export function resolvePicksGameweek(bootstrap: FplBootstrap): number | null {
+  const now = Date.now();
+  const passed = bootstrap.events
+    .filter((e) => Date.parse(e.deadline_time) <= now)
+    .sort((a, b) => b.id - a.id);
+  return passed[0]?.id ?? null;
+}
+
 /** The gameweek to analyse: the next one if the season hasn't started. */
 export function resolveTargetGameweek(bootstrap: FplBootstrap): number {
   const next = bootstrap.events.find((e) => e.is_next);

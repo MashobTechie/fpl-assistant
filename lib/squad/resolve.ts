@@ -8,6 +8,7 @@ import {
   getEntry,
   getFixtures,
   getPicks,
+  resolvePicksGameweek,
   resolveTargetGameweek,
 } from "@/lib/fpl/client";
 import type { FplElement } from "@/lib/fpl/types";
@@ -136,12 +137,23 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     managerName = `${entry.player_first_name} ${entry.player_last_name}`.trim();
     teamName = entry.name;
 
-    const picks = await getPicks(opts.entryId, gameweek);
-    if (!picks) {
-      // FPL only exposes picks once a gameweek's deadline has passed. Before
-      // the first deadline of a season there is nothing to import at all.
+    // Import the last LOCKED squad, not the gameweek being analysed. Those are
+    // different numbers: picks for the gameweek under analysis are, by
+    // definition, not published yet.
+    const picksGameweek = resolvePicksGameweek(bootstrap);
+    if (picksGameweek === null) {
       throw new SquadResolutionError(
-        `FPL has not published picks for gameweek ${gameweek} yet. Picks become available once the deadline passes — until then, enter your squad manually.`,
+        "The season has not started, so FPL has not locked any squad to import yet. " +
+          "Build your squad manually — it is the only way in before the first deadline.",
+        "picks_unavailable",
+      );
+    }
+
+    const picks = await getPicks(opts.entryId, picksGameweek);
+    if (!picks) {
+      throw new SquadResolutionError(
+        `FPL has no squad on record for team ${opts.entryId} in gameweek ${picksGameweek}. ` +
+          "If you joined partway through the season, build your squad manually.",
         "picks_unavailable",
       );
     }
