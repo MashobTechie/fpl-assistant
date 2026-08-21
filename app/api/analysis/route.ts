@@ -8,6 +8,7 @@ import {
   requireUser,
   resolveForRequest,
 } from "@/lib/squad/api";
+import { PROJECTION_ENGINE_VERSION } from "@/lib/projections/constants";
 import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
       .select("analysis, projections, created_at")
       .eq("user_id", user.id)
       .eq("squad_hash", hash)
+      .eq("engine_version", PROJECTION_ENGINE_VERSION)
       .eq("gameweek", resolved.gameweek)
       .eq("horizon", resolved.horizon)
       .order("created_at", { ascending: false })
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
     user_id: user.id,
     squad_id: squadRow.id,
     squad_hash: hash,
+    engine_version: PROJECTION_ENGINE_VERSION,
     gameweek: resolved.gameweek,
     horizon: resolved.horizon,
     model: process.env.ANTHROPIC_MODEL ?? "claude-opus-5",

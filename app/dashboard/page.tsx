@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import { DashboardClient } from "@/components/DashboardClient";
 import { getBootstrap, resolveTargetGameweek } from "@/lib/fpl/client";
+import { PROJECTION_ENGINE_VERSION } from "@/lib/projections/constants";
 import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
@@ -44,6 +45,9 @@ export default async function DashboardPage() {
         .select("analysis, gameweek, horizon, created_at")
         .eq("user_id", user.id)
         .eq("squad_hash", squadHash(picks))
+        // An analysis from an older engine describes numbers this build no longer
+        // produces. Better to offer a fresh one than to restore a stale reading.
+        .eq("engine_version", PROJECTION_ENGINE_VERSION)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle()

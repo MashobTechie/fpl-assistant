@@ -104,6 +104,11 @@ create table if not exists public.analyses (
   -- cache on squad_id alone therefore returned the previous squad's reasoning
   -- for a squad it no longer described — while reporting cached: true.
   squad_hash  text not null,
+  -- Which build of the projection engine produced the numbers this analysis
+  -- reasons about. Part of the cache key: when the maths changes, previous
+  -- analyses describe figures the app no longer produces and must not be
+  -- served as though they still hold.
+  engine_version text not null default '1',
   model       text not null,
   -- The projection engine's output, so a past analysis can be read against the
   -- numbers it was actually given rather than today's.
@@ -117,7 +122,7 @@ create index if not exists analyses_user_gameweek_idx
 
 -- The analysis-cache lookup: the exact squad, gameweek and horizon.
 create index if not exists analyses_cache_idx
-  on public.analyses (user_id, squad_hash, gameweek, horizon, created_at desc);
+  on public.analyses (user_id, squad_hash, engine_version, gameweek, horizon, created_at desc);
 
 alter table public.analyses enable row level security;
 

@@ -203,3 +203,19 @@ export const BONUS_FIXTURE_SENSITIVITY = 0.4;
 
 /** Buckets used to fit expected bonus against BPS per 90. */
 export const BONUS_CURVE_BUCKETS = 12;
+
+// ------------------------------------------------------------ engine version
+
+/**
+ * Bump whenever a change to this file or the engine moves the numbers.
+ *
+ * A stored analysis reasons about the projections it was given. Keying the
+ * cache on the squad alone meant an engine change left every analysis
+ * describing figures the app no longer produces, with nothing to notice it —
+ * the squad had not changed, so the cache stayed warm and confidently wrong.
+ *
+ * History:
+ *   1  first version
+ *   2  club minutes constraint, discipline, team defence, BPS-based bonus
+ */
+export const PROJECTION_ENGINE_VERSION = "2";

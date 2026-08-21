@@ -312,53 +312,44 @@ export function DashboardClient({
         />
       )}
 
-      {projections && !shownAnalysis && !thinking && !analysisError && (
-        <Button
-          className="self-start"
-          onClick={() =>
-            void runAnalysis(
-              mode === "import" && entryId
-                ? { entryId: Number(entryId) }
-                : { playerIds: projections.squad.map((p) => p.playerId) },
-            )
-          }
-        >
-          Get the analyst&apos;s read
-        </Button>
-      )}
-
       {analysis && projections && (
-        <>
-          <AnalysisPanel
-            analysis={analysis.analysis}
-            gameweek={analysis.gameweek}
-            optimalPoints={projections.optimal.expectedPoints}
-            formation={projections.optimal.formationLabel}
-            cached={analysis.cached}
-            generatedAt={analysis.generatedAt}
-          />
-
-          {analysis.cached && (
-            <Button
-              variant="ghost"
-              disabled={thinking}
-              onClick={() =>
-                void run(
-                  mode === "import"
-                    ? { entryId: Number(entryId), refresh: true }
-                    : {
-                        playerIds: projections.squad.map((p) => p.playerId),
-                        refresh: true,
-                      },
-                )
-              }
-              className="self-start text-sm"
-            >
-              Regenerate analysis
-            </Button>
-          )}
-        </>
+        <AnalysisPanel
+          analysis={analysis.analysis}
+          gameweek={analysis.gameweek}
+          optimalPoints={projections.optimal.expectedPoints}
+          formation={projections.optimal.formationLabel}
+          cached={analysis.cached}
+          generatedAt={analysis.generatedAt}
+        />
       )}
+
+      {/* One control, always reachable once projections exist. Previously a
+          restored analysis hid the "get one" button while never showing the
+          "regenerate" one, which left no way to re-run a squad at all. */}
+      {projections && !thinking && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={() =>
+              void runAnalysis({
+                ...(mode === "import" && entryId
+                  ? { entryId: Number(entryId) }
+                  : { playerIds: projections.squad.map((p) => p.playerId) }),
+                // Force a fresh call only when something is already on screen.
+                // Otherwise the cache is exactly what we want to hit, for free.
+                refresh: Boolean(shownAnalysis),
+              })
+            }
+          >
+            {shownAnalysis ? "Re-run the analysis" : "Get the analyst's read"}
+          </Button>
+          {shownAnalysis && (
+            <span className="text-xs text-[--color-ink-muted]">
+              Uses one analysis from today&apos;s allowance.
+            </span>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
