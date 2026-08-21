@@ -82,6 +82,13 @@ export interface ProjectionContext {
   depthFactorByPlayer: Map<number, number>;
   /** Mean discipline points per 90, by position, for shrinking small samples. */
   disciplinePriorByPosition: Record<ElementTypeId, number>;
+  /**
+   * How a club's defence compares with the league, from expected goals
+   * conceded. Below 1 concedes less than average.
+   */
+  teamDefenceByTeam: Map<number, number>;
+  /** Expected bonus per 90 as a function of BPS per 90, fitted from the season. */
+  bonusCurve: { bps90: number; bonus90: number }[];
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -205,6 +212,47 @@ function disciplinePer90(player: FplElement, ctx: ProjectionContext): number {
   return (observed + priorPoints) / combinedNineties;
 }
 
+/**
+ * Expected count of FPL's minus-one deductions, which land every second goal
+ * conceded: E[floor(X/2)] for X ~ Poisson(lambda), summed as P(X >= 2k).
+ *
+ * Halving lambda is the obvious shortcut and is wrong at the low end, where
+ * most clean-sheet-relevant fixtures sit: at lambda 1.0 it claims 0.50
+ * deductions against a true 0.26.
+ */
+function expectedDeductions(lambda: number): number {
+  let total = 0;
+  for (let k = 1; k <= 6; k++) total += poissonAtLeast(lambda, 2 * k);
+  return total;
+}
+
+/**
+ * Expected bonus per 90 for a given BPS per 90, read off a curve fitted to this
+ * season's players.
+ *
+ * Realised bonus is the noisier estimate of the same thing: it is zero for most
+ * players in most matches, so a small sample says more about luck than about
+ * the player. BPS accrues every match and is the quantity bonus is actually
+ * awarded from, so it carries the same signal with far less variance.
+ */
+function bonusFromBps(bps90: number, curve: ProjectionContext["bonusCurve"]): number {
+  if (curve.length === 0) return 0;
+  if (bps90 <= curve[0].bps90) return curve[0].bonus90;
+  const last = curve[curve.length - 1];
+  if (bps90 >= last.bps90) return last.bonus90;
+
+  for (let i = 1; i < curve.length; i++) {
+    const hi = curve[i];
+    if (bps90 <= hi.bps90) {
+      const lo = curve[i - 1];
+      const span = hi.bps90 - lo.bps90;
+      const t = span > 0 ? (bps90 - lo.bps90) / span : 0;
+      return lo.bonus90 + t * (hi.bonus90 - lo.bonus90);
+    }
+  }
+  return last.bonus90;
+}
+
 export function buildContext(
   bootstrap: FplBootstrap,
   fixtures: FplFixture[],
@@ -253,6 +301,67 @@ export function buildContext(
         : 0;
   }
 
+  // How each club's defence compares with the league, from expected goals
+  // conceded rather than actual — xGC is the same quantity with less noise.
+  // Weighted by minutes, so the players who actually play define the average.
+  const teamDefenceByTeam = new Map<number, number>();
+  const teamXgc = new Map<number, number>();
+  for (const t of bootstrap.teams) {
+    const cohort = bootstrap.elements.filter(
+      (e) => e.team === t.id && e.minutes >= K.TEAM_DEFENCE_MIN_MINUTES,
+    );
+    const minutes = cohort.reduce((sum, e) => sum + e.minutes, 0);
+    if (minutes > 0) {
+      teamXgc.set(
+        t.id,
+        cohort.reduce(
+          (sum, e) => sum + (e.expected_goals_conceded_per_90 ?? 0) * e.minutes,
+          0,
+        ) / minutes,
+      );
+    }
+  }
+  const xgcValues = [...teamXgc.values()].filter((v) => v > 0);
+  const leagueXgc =
+    xgcValues.length > 0
+      ? xgcValues.reduce((a, b) => a + b, 0) / xgcValues.length
+      : 0;
+  for (const t of bootstrap.teams) {
+    const own = teamXgc.get(t.id);
+    teamDefenceByTeam.set(
+      t.id,
+      own && leagueXgc > 0
+        ? clamp(own / leagueXgc, K.TEAM_DEFENCE_MIN, K.TEAM_DEFENCE_MAX)
+        : 1,
+    );
+  }
+
+  // Expected bonus against BPS per 90, fitted from this season's players so it
+  // tracks however BPS is actually converting into bonus.
+  const bonusSamples = bootstrap.elements
+    .filter((e) => e.minutes >= K.TEAM_DEFENCE_MIN_MINUTES)
+    .map((e) => ({
+      bps90: (e.bps / e.minutes) * 90,
+      bonus90: (e.bonus / e.minutes) * 90,
+    }))
+    .sort((a, b) => a.bps90 - b.bps90);
+
+  const bonusCurve: { bps90: number; bonus90: number }[] = [];
+  if (bonusSamples.length >= K.BONUS_CURVE_BUCKETS) {
+    const size = Math.floor(bonusSamples.length / K.BONUS_CURVE_BUCKETS);
+    for (let i = 0; i < K.BONUS_CURVE_BUCKETS; i++) {
+      const slice = bonusSamples.slice(
+        i * size,
+        i === K.BONUS_CURVE_BUCKETS - 1 ? bonusSamples.length : (i + 1) * size,
+      );
+      if (slice.length === 0) continue;
+      bonusCurve.push({
+        bps90: slice.reduce((s2, r) => s2 + r.bps90, 0) / slice.length,
+        bonus90: slice.reduce((s2, r) => s2 + r.bonus90, 0) / slice.length,
+      });
+    }
+  }
+
   // Depth needs the rest of the context to exist first: raw minutes depend on
   // maxCostByPosition for players with no league history.
   const partial: ProjectionContext = {
@@ -262,6 +371,8 @@ export function buildContext(
     fixturesByTeam,
     depthFactorByPlayer: new Map(),
     disciplinePriorByPosition,
+    teamDefenceByTeam,
+    bonusCurve,
   };
 
   const byTeam = new Map<number, FplElement[]>();
@@ -290,6 +401,8 @@ export function buildContext(
     fixturesByTeam,
     depthFactorByPlayer,
     disciplinePriorByPosition,
+    teamDefenceByTeam,
+    bonusCurve,
   };
 }
 
@@ -382,11 +495,16 @@ function projectFixture(
   const goals = xg90 * minutesShare * attackMult * K.POINTS_PER_GOAL[pos];
   const assists = xa90 * minutesShare * attackMult * K.POINTS_PER_ASSIST;
 
-  const cleanSheetProb = clamp(
-    (K.FDR_CLEAN_SHEET_PROB[difficulty] ?? 0.25) * defenceMult,
-    0,
-    0.75,
-  );
+  // One expected-goals-against figure now drives both the clean sheet and the
+  // deductions, so the two can no longer disagree. It combines the fixture with
+  // the club's own defensive record: identical opponents used to imply
+  // identical clean-sheet odds for the best and worst defences in the league.
+  const teamDefence = ctx.teamDefenceByTeam.get(player.team) ?? 1;
+  const goalsAgainst =
+    ((K.FDR_GOALS_CONCEDED[difficulty] ?? 1.35) * teamDefence) / defenceMult;
+
+  // A clean sheet is simply no goals conceded.
+  const cleanSheetProb = clamp(Math.exp(-goalsAgainst), 0, 0.75);
   const cleanSheet = pSixty * cleanSheetProb * K.POINTS_PER_CLEAN_SHEET[pos];
 
   const saves =
@@ -400,16 +518,23 @@ function projectFixture(
     poissonAtLeast(defconLambda, K.DEFCON_THRESHOLD[pos]) *
     K.POINTS_DEFENSIVE_CONTRIBUTION;
 
-  // Bonus is driven by the BPS system; last season's rate is the best proxy.
-  const bonus90 =
-    player.minutes > 0 ? (player.bonus / player.minutes) * 90 : 0;
-  const bonus = bonus90 * minutesShare * attackMult;
+  // Bonus comes from BPS, so project it from BPS rather than from bonus itself.
+  // Realised bonus is zero for most players in most matches, which makes a
+  // short sample mostly luck; BPS accrues every match and carries the same
+  // signal with far less variance.
+  const bps90 = player.minutes > 0 ? (player.bps / player.minutes) * 90 : 0;
+  const bonus90 = bonusFromBps(bps90, ctx.bonusCurve);
+  // Only a fraction of the attacking multiplier: the goals that earn BPS are
+  // already scaled by the fixture, so the full multiplier double-counted.
+  const bonusFixture = 1 + (attackMult - 1) * K.BONUS_FIXTURE_SENSITIVITY;
+  const bonus = bonus90 * minutesShare * bonusFixture;
 
-  const expectedConceded =
-    ((K.FDR_GOALS_CONCEDED[difficulty] ?? 1.35) / defenceMult) * minutesShare;
+  // FPL deducts a point every second goal conceded, which is E[floor(X/2)] —
+  // not half the expected goals. Halving overstates it wherever clean sheets
+  // are plausible, which is exactly where defenders are chosen.
   const goalsConceded =
     pos === 1 || pos === 2
-      ? -(expectedConceded / K.GOALS_CONCEDED_PER_MINUS_ONE)
+      ? -expectedDeductions(goalsAgainst) * minutesShare
       : 0;
 
   // Cards, own goals and penalty events. Scaled by minutes for the same reason

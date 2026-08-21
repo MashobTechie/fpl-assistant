@@ -58,14 +58,10 @@ export const FDR_ATTACK_MULTIPLIER: Record<number, number> = {
   5: 0.75,
 };
 
-/** Baseline clean-sheet probability by FDR, before the home/away adjustment. */
-export const FDR_CLEAN_SHEET_PROB: Record<number, number> = {
-  1: 0.5,
-  2: 0.4,
-  3: 0.29,
-  4: 0.19,
-  5: 0.12,
-};
+// FDR_CLEAN_SHEET_PROB was removed. Clean-sheet probability is now derived from
+// the same expected-goals-against figure as the deductions, as exp(-lambda), so
+// the two cannot drift apart. A second independent lookup would have been a
+// tunable that silently contradicted the first.
 
 /** Expected goals conceded by FDR, before the home/away adjustment. */
 export const FDR_GOALS_CONCEDED: Record<number, number> = {
@@ -174,3 +170,36 @@ export const POINTS_PENALTY_SAVE = 5; // goalkeepers only
  * small sample from inventing one.
  */
 export const DISCIPLINE_PRIOR_MINUTES = 900;
+
+// ------------------------------------------------------------ team defence
+
+/**
+ * Bounds on how far a club's own defensive record may move a fixture's
+ * expected goals against.
+ *
+ * Fixture difficulty alone treats every defence as average, so Arsenal and a
+ * promoted side were given identical clean-sheet odds against the same
+ * opponent. The club's expected goals conceded per 90 fixes that, but it is a
+ * season-long average being applied to one match, so it is clamped rather than
+ * trusted outright.
+ */
+export const TEAM_DEFENCE_MIN = 0.65;
+export const TEAM_DEFENCE_MAX = 1.45;
+
+/** Minimum minutes before a player's xGC counts toward his club's average. */
+export const TEAM_DEFENCE_MIN_MINUTES = 450;
+
+// -------------------------------------------------------------------- bonus
+
+/**
+ * How much fixture difficulty moves expected bonus.
+ *
+ * Bonus was being multiplied by the full attacking multiplier, which
+ * double-counted: the goals that earn BPS are already scaled by the fixture.
+ * An easy fixture does still raise bonus, through more shots, saves and
+ * defensive actions, so the effect is kept at a fraction of the attacking one.
+ */
+export const BONUS_FIXTURE_SENSITIVITY = 0.4;
+
+/** Buckets used to fit expected bonus against BPS per 90. */
+export const BONUS_CURVE_BUCKETS = 12;
