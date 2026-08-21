@@ -35,12 +35,13 @@ Supabase (auth + Postgres) · Anthropic SDK (`claude-opus-5`) · Zod 4.
 ## Layout
 
 ```
-lib/fpl/            client.ts (server-only API client), cache.ts, types.ts
+lib/fpl/            client.ts (server-only API client), cache.ts, store.ts, types.ts
 lib/projections/    engine.ts (the maths), constants.ts (rules + priors)
 lib/squad/          optimizer.ts (exact XI), resolve.ts (orchestration)
 lib/ai/             analyst.ts (Claude call), prompts.ts, schema.ts (Zod)
 lib/supabase/       client.ts, server.ts, session.ts
 app/api/analysis/   POST — projections + reasoning, cached per squad+gameweek
+app/api/cron/       GET  — scheduled snapshot; bearer CRON_SECRET, daily 03:00Z
 app/api/players/    GET — all ~600 players projected, for the manual picker
 app/dashboard/      the product
 proxy.ts            auth redirects (Next 16 renamed middleware -> proxy)
@@ -57,7 +58,28 @@ supabase/schema.sql profiles, squads, analyses — all under RLS
   2MB.** `next: { revalidate }` therefore failed *silently* and re-fetched on
   every request. The fix is `cache: "no-store"` plus payload trimming and an
   in-process TTL memo in [lib/fpl/cache.ts](lib/fpl/cache.ts). Measured: 1.74s
-  cold, 0.016s warm. The durable fix is snapshotting to Postgres on a schedule.
+  cold, 0.016s warm.
+- **FPL data reads through three layers**, cheapest first: the in-process memo,
+  then Postgres ([lib/fpl/store.ts](lib/fpl/store.ts)), then FPL itself.
+  Measured: 1199ms live, 85ms from Postgres cold, 36ms warm. The middle layer is
+  what makes instances agree — without it each serverless instance keeps its own
+  copy and two requests a second apart can see prices an hour apart. A live
+  fetch writes back, so a stale stored copy self-heals.
+- **`getBootstrapLive`/`getFixturesLive` bypass every cache** and exist for the
+  snapshot job: a job whose purpose is to refresh the cache must not read from
+  the cache it is refreshing.
+- **FPL publishes no history.** Price and ownership are overwritten in place, so
+  today's `selected_by_percent` is unrecoverable tomorrow.
+  `fpl_player_snapshots` keeps one row per player per day — measured 152kB/day,
+  ~42MB/season. Daily, not half-hourly: prices move once a day around 01:30 UTC,
+  and half-hourly capture would cost 1.49GB a season to store the same numbers
+  48 times. The job upserts on `(captured_on, player_id)`, so running it more
+  often is harmless.
+- **Picks are for the last LOCKED gameweek, not the one being analysed.** These
+  are different numbers. `is_next` means that deadline has not passed, and picks
+  exist only after one does — asking for the analysed gameweek's picks asks for
+  the one set guaranteed not to exist. `resolvePicksGameweek` finds the right
+  one by deadline.
 - **Season totals change meaning.** Pre-season, `minutes`/`expected_goals` hold
   *last* season's numbers; once underway the same fields hold *this* season's.
   `baseMinutesPerMatch` divides by 38 or by gameweeks played accordingly —

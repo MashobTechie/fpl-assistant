@@ -7,6 +7,7 @@
  */
 
 import { cached } from "./cache";
+import { readCachedPayload, writeCachedPayload } from "./store";
 import type {
   FplBootstrap,
   FplElement,
@@ -110,19 +111,60 @@ function trimFixtures(raw: FplFixture[]): FplFixture[] {
 }
 
 /**
+ * Straight from FPL, past every cache.
+ *
+ * The snapshot job uses these: a job whose purpose is to refresh the cache
+ * must not read from the cache it is refreshing. Everything else should use
+ * getBootstrap/getFixtures below.
+ */
+export async function getBootstrapLive(): Promise<FplBootstrap> {
+  return trimBootstrap(await get<FplBootstrap>("/bootstrap-static/"));
+}
+
+export async function getFixturesLive(): Promise<FplFixture[]> {
+  return trimFixtures(await get<FplFixture[]>("/fixtures/"));
+}
+
+/**
+ * Reads through three layers, cheapest first: this instance's memo, then the
+ * shared Postgres copy, then FPL itself.
+ *
+ * The middle layer is the point. Without it each serverless instance keeps its
+ * own copy, so two requests a second apart can see prices an hour apart — and
+ * an FPL outage takes the app down rather than making it slightly stale.
+ *
+ * `maxAgeSeconds` applies to the stored copy as well as the memo, so freshness
+ * is unchanged from before; what changes is that instances now agree. A live
+ * fetch writes back, so a stale stored copy self-heals on the next request
+ * instead of sending every instance to FPL.
+ */
+async function readThrough<T>(
+  key: string,
+  maxAgeSeconds: number,
+  fetchLive: () => Promise<T>,
+): Promise<T> {
+  const stored = await readCachedPayload<T>(key, maxAgeSeconds);
+  if (stored) return stored;
+
+  const fresh = await fetchLive();
+  void writeCachedPayload(key, fresh);
+  return fresh;
+}
+
+/**
  * Players, teams, gameweeks. Revalidated hourly — prices and injury news are
  * the fastest-moving parts and neither turns over faster than that.
  */
 export function getBootstrap(): Promise<FplBootstrap> {
-  return cached("bootstrap", 3600, async () =>
-    trimBootstrap(await get<FplBootstrap>("/bootstrap-static/")),
+  return cached("bootstrap", 3600, () =>
+    readThrough("bootstrap", 3600, getBootstrapLive),
   );
 }
 
 /** All 380 fixtures with per-team FDR. Changes rarely; cached for 6h. */
 export function getFixtures(): Promise<FplFixture[]> {
-  return cached("fixtures", 21_600, async () =>
-    trimFixtures(await get<FplFixture[]>("/fixtures/")),
+  return cached("fixtures", 21_600, () =>
+    readThrough("fixtures", 21_600, getFixturesLive),
   );
 }
 

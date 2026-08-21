@@ -218,3 +218,71 @@ revoke all on function public.reserve_analysis() from public;
 revoke all on function public.release_analysis() from public;
 grant execute on function public.reserve_analysis() to authenticated;
 grant execute on function public.release_analysis() to authenticated;
+
+-- ------------------------------------------------------------ FPL snapshots
+--
+-- Two tables solving two different problems.
+--
+-- Unlike profiles/squads/analyses, this is public reference data with no
+-- owner, so the RLS shape differs: history is world-readable, and the serving
+-- cache is readable by nobody through the API. Both are written only by the
+-- snapshot job, which uses the service role and bypasses RLS entirely.
+
+/**
+ * Daily history of every player.
+ *
+ * FPL overwrites these fields in place and exposes no history endpoint: today's
+ * ownership figure is unrecoverable tomorrow. Each row is therefore a piece of
+ * the past that only exists because it was captured.
+ *
+ * Keyed on (captured_on, player_id), so running the job more often than daily
+ * refreshes the day's row rather than accumulating duplicates. Prices move once
+ * a day, around 01:30 UTC, so a finer grain would store the same number many
+ * times over — measured, half-hourly capture costs 1.49 GB a season against
+ * 0.03 GB for daily.
+ */
+create table if not exists public.fpl_player_snapshots (
+  captured_on          date    not null,
+  player_id            integer not null,
+  gameweek             integer,
+  now_cost             integer not null,
+  cost_change_event    integer,
+  selected_by_percent  numeric(5, 2),
+  transfers_in_event   integer,
+  transfers_out_event  integer,
+  total_points         integer,
+  minutes              integer,
+  form                 numeric(5, 2),
+  status               text,
+  captured_at          timestamptz not null default now(),
+  primary key (captured_on, player_id)
+);
+
+create index if not exists fpl_snapshots_player_idx
+  on public.fpl_player_snapshots (player_id, captured_on desc);
+
+alter table public.fpl_player_snapshots enable row level security;
+
+-- Public reference data: readable by anyone, written by the job alone.
+drop policy if exists "player history is public" on public.fpl_player_snapshots;
+create policy "player history is public"
+  on public.fpl_player_snapshots for select using (true);
+
+/**
+ * The current FPL payloads, overwritten in place.
+ *
+ * This is the serving layer. Without it every serverless instance keeps its own
+ * in-memory copy, so two requests a second apart can see prices an hour apart.
+ * It also means an FPL outage degrades the app to slightly stale data instead
+ * of stopping it.
+ *
+ * Deliberately has RLS enabled and NO policy: nothing should read this through
+ * the public API. The server reads it with the service role.
+ */
+create table if not exists public.fpl_cache (
+  key        text primary key,
+  payload    jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+
+alter table public.fpl_cache enable row level security;
