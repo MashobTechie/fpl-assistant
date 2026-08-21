@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
 import { DashboardClient } from "@/components/DashboardClient";
 import { getBootstrap, resolveTargetGameweek } from "@/lib/fpl/client";
+import { squadHash } from "@/lib/squad/validate";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
@@ -17,6 +18,36 @@ export default async function DashboardPage() {
     .select("fpl_entry_id")
     .eq("id", user.id)
     .maybeSingle();
+
+  // Restore whatever this manager last worked on.
+  //
+  // The squad was always being saved; nothing ever read it back, so a refresh
+  // silently dropped a squad someone had just spent minutes building.
+  const { data: savedSquad } = await supabase
+    .from("squads")
+    .select("picks, gameweek, source, fpl_entry_id")
+    .eq("user_id", user.id)
+    .order("gameweek", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const picks: number[] = Array.isArray(savedSquad?.picks)
+    ? (savedSquad.picks as number[])
+    : [];
+
+  // Any analysis already paid for is free to show again. Deliberately read here
+  // rather than by calling /api/analysis on mount, which would bill the user
+  // once per page load.
+  const { data: savedAnalysis } = picks.length
+    ? await supabase
+        .from("analyses")
+        .select("analysis, gameweek, horizon, created_at")
+        .eq("user_id", user.id)
+        .eq("squad_hash", squadHash(picks))
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
 
   // Deadline context is genuinely useful information, so fetch it server-side
   // rather than making the client wait for a round trip to learn the gameweek.
@@ -69,7 +100,12 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      <DashboardClient initialEntryId={profile?.fpl_entry_id ?? null} />
+      <DashboardClient
+        initialEntryId={profile?.fpl_entry_id ?? savedSquad?.fpl_entry_id ?? null}
+        savedPicks={picks.length ? picks : null}
+        savedSource={(savedSquad?.source as "manual" | "fpl_import") ?? null}
+        savedAnalysis={savedAnalysis ?? null}
+      />
     </main>
   );
 }

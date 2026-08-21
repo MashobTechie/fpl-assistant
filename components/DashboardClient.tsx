@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-import type { AnalysisResponse, ProjectionsResponse } from "@/lib/types";
+import type {
+  AnalysisResponse,
+  GameweekAnalysisLike,
+  ProjectionsResponse,
+} from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { LineupTable } from "./LineupTable";
 import { SquadBuilder } from "./SquadBuilder";
@@ -22,9 +26,22 @@ type Mode = "import" | "manual";
  * fills in underneath when it arrives. If the analyst fails or the daily
  * allowance is gone, the projections are still there and still useful.
  */
-export function DashboardClient({ initialEntryId }: { initialEntryId: number | null }) {
-  const [mode, setMode] = useState<Mode>("import");
+export function DashboardClient({
+  initialEntryId,
+  savedPicks,
+  savedSource,
+  savedAnalysis,
+}: {
+  initialEntryId: number | null;
+  /** The last squad this manager saved, restored on load. */
+  savedPicks: number[] | null;
+  savedSource: "manual" | "fpl_import" | null;
+  /** An analysis already paid for. Free to show; never re-requested on load. */
+  savedAnalysis: GameweekAnalysisLike | null;
+}) {
+  const [mode, setMode] = useState<Mode>(savedSource === "manual" ? "manual" : "import");
   const [entryId, setEntryId] = useState(initialEntryId ? String(initialEntryId) : "");
+  const [restoring, setRestoring] = useState(Boolean(savedPicks));
 
   const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
@@ -34,39 +51,38 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
   const [pending, setPending] = useState(false);
   const [thinking, setThinking] = useState(false);
 
-  async function run(body: Record<string, unknown>) {
-    setPending(true);
-    setError(null);
-    setAnalysisError(null);
-    setProjections(null);
-    setAnalysis(null);
+  useEffect(() => {
+    if (!savedPicks) return;
+    let cancelled = false;
 
-    // ---- Phase one: the maths. Fast, free, and the actual product. --------
-    let projected: ProjectionsResponse;
-    try {
-      const res = await fetch("/api/projections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
-        // Before a deadline there are no picks to import — steer to manual.
-        if (data.code === "picks_unavailable") setMode("manual");
-        return;
+    // Projections only. Calling /api/analysis here would spend money every time
+    // someone opened the dashboard; a stored analysis arrives as a prop instead.
+    (async () => {
+      try {
+        const res = await fetch("/api/projections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerIds: savedPicks }),
+        });
+        const data = await res.json();
+        if (!cancelled && res.ok) setProjections(data as ProjectionsResponse);
+      } catch {
+        // A failed restore is not worth an error banner: the squad is still
+        // saved, and the manager can re-run it.
+      } finally {
+        if (!cancelled) setRestoring(false);
       }
-      projected = data as ProjectionsResponse;
-      setProjections(projected);
-    } catch {
-      setError("Couldn't reach the server. Check your connection and try again.");
-      return;
-    } finally {
-      setPending(false);
-    }
+    })();
 
-    // ---- Phase two: the reasoning. Slow, billed, and additive. ------------
+    return () => {
+      cancelled = true;
+    };
+  }, [savedPicks]);
+
+  /** Phase two on its own, so a restored squad can ask for an analysis. */
+  async function runAnalysis(body: Record<string, unknown>) {
     setThinking(true);
+    setAnalysisError(null);
     try {
       const res = await fetch("/api/analysis", {
         method: "POST",
@@ -85,6 +101,42 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
       setThinking(false);
     }
   }
+
+  async function run(body: Record<string, unknown>) {
+    setPending(true);
+    setError(null);
+    setAnalysisError(null);
+    setProjections(null);
+    setAnalysis(null);
+
+    // ---- Phase one: the maths. Fast, free, and the actual product. --------
+    try {
+      const res = await fetch("/api/projections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong.");
+        // Before a deadline there are no picks to import — steer to manual.
+        if (data.code === "picks_unavailable") setMode("manual");
+        return;
+      }
+      setProjections(data as ProjectionsResponse);
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
+      return;
+    } finally {
+      setPending(false);
+    }
+
+    // ---- Phase two: the reasoning. Slow, billed, and additive. ------------
+    await runAnalysis(body);
+  }
+
+  // The freshly fetched analysis wins; otherwise fall back to the stored one.
+  const shownAnalysis = analysis?.analysis ?? savedAnalysis?.analysis ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -163,9 +215,17 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
             bench={projections.optimal.bench}
             gameweek={projections.gameweek}
             horizon={projections.horizon}
-            captainId={analysis?.analysis.captain.playerId}
-            viceId={analysis?.analysis.viceCaptain.playerId}
+            captainId={shownAnalysis?.captain.playerId}
+            viceId={shownAnalysis?.viceCaptain.playerId}
           />
+        </Card>
+      )}
+
+      {restoring && !projections && (
+        <Card className="p-5">
+          <p className="text-sm text-[--color-ink-muted]">
+            Restoring your saved squad…
+          </p>
         </Card>
       )}
 
@@ -181,6 +241,32 @@ export function DashboardClient({ initialEntryId }: { initialEntryId: number | n
             the analyst.
           </p>
         </Card>
+      )}
+
+      {!analysis && !thinking && savedAnalysis && projections && (
+        <AnalysisPanel
+          analysis={savedAnalysis.analysis}
+          gameweek={savedAnalysis.gameweek}
+          optimalPoints={projections.optimal.expectedPoints}
+          formation={projections.optimal.formationLabel}
+          cached
+          generatedAt={savedAnalysis.created_at}
+        />
+      )}
+
+      {projections && !shownAnalysis && !thinking && !analysisError && (
+        <Button
+          className="self-start"
+          onClick={() =>
+            void runAnalysis(
+              mode === "import" && entryId
+                ? { entryId: Number(entryId) }
+                : { playerIds: projections.squad.map((p) => p.playerId) },
+            )
+          }
+        >
+          Get the analyst&apos;s read
+        </Button>
       )}
 
       {analysis && projections && (

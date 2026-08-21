@@ -26,6 +26,20 @@ export interface PlayersResponse {
   players: PlayerListItem[];
 }
 
+/**
+ * A stored analysis, read straight from Postgres on page load.
+ *
+ * Shaped like the row rather than the API response because it never travels
+ * through /api/analysis — re-requesting an analysis just to redisplay one
+ * already paid for would bill the user on every refresh.
+ */
+export interface GameweekAnalysisLike {
+  analysis: GameweekAnalysis;
+  gameweek: number;
+  horizon: number;
+  created_at: string;
+}
+
 /** The fast half: everything the deterministic engine knows, no LLM involved. */
 export interface ProjectionsResponse {
   gameweek: number;
