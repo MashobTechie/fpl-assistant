@@ -9,10 +9,12 @@ import type {
 } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { LineupTable } from "./LineupTable";
+import { PitchView } from "./PitchView";
 import { SquadBuilder } from "./SquadBuilder";
-import { Button, Card, SectionHeading, SegmentedControl } from "./ui";
+import { Button, Card, SectionHeading, SegmentedControl, StatTile } from "./ui";
 
 type Mode = "import" | "manual";
+type View = "pitch" | "list";
 
 /**
  * Two requests, not one.
@@ -42,6 +44,8 @@ export function DashboardClient({
   const [mode, setMode] = useState<Mode>(savedSource === "manual" ? "manual" : "import");
   const [entryId, setEntryId] = useState(initialEntryId ? String(initialEntryId) : "");
   const [restoring, setRestoring] = useState(Boolean(savedPicks));
+  // Pitch first, like FPL itself: shape is what a manager checks before numbers.
+  const [view, setView] = useState<View>("pitch");
 
   const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
@@ -204,20 +208,74 @@ export function DashboardClient({
       </Card>
 
       {projections && (
-        <Card className="p-5 sm:p-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatTile
+            label="Squad value"
+            value={
+              projections.squadValue !== null
+                ? `£${projections.squadValue.toFixed(1)}m`
+                : "—"
+            }
+          />
+          <StatTile
+            label="Bank"
+            value={projections.bank !== null ? `£${projections.bank.toFixed(1)}m` : "—"}
+          />
+          <StatTile
+            label={`GW${projections.gameweek} projected`}
+            value={projections.optimal.expectedPoints.toFixed(1)}
+            tone="accent"
+            sub={projections.optimal.formationLabel}
+          />
+          <StatTile
+            label={`Next ${projections.horizon} GW`}
+            value={projections.optimal.startingXI
+              .reduce((sum, p) => sum + p.totalExpectedPoints, 0)
+              .toFixed(0)}
+            sub="starting XI"
+          />
+        </div>
+      )}
+
+      {projections && (
+        <Card className="p-4 sm:p-6">
           <SectionHeading
             hint={`${projections.optimal.formationLabel} · ${projections.optimal.expectedPoints.toFixed(1)} xPts`}
           >
             Projected lineup
           </SectionHeading>
-          <LineupTable
-            startingXI={projections.optimal.startingXI}
-            bench={projections.optimal.bench}
-            gameweek={projections.gameweek}
-            horizon={projections.horizon}
-            captainId={shownAnalysis?.captain.playerId}
-            viceId={shownAnalysis?.viceCaptain.playerId}
-          />
+
+          <div className="mb-4">
+            <SegmentedControl
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "pitch", label: "Pitch" },
+                { value: "list", label: "List" },
+              ]}
+            />
+          </div>
+
+          {view === "pitch" ? (
+            <PitchView
+              startingXI={projections.optimal.startingXI}
+              bench={projections.optimal.bench}
+              gameweek={projections.gameweek}
+              formationLabel={projections.optimal.formationLabel}
+              expectedPoints={projections.optimal.expectedPoints}
+              captainId={shownAnalysis?.captain.playerId}
+              viceId={shownAnalysis?.viceCaptain.playerId}
+            />
+          ) : (
+            <LineupTable
+              startingXI={projections.optimal.startingXI}
+              bench={projections.optimal.bench}
+              gameweek={projections.gameweek}
+              horizon={projections.horizon}
+              captainId={shownAnalysis?.captain.playerId}
+              viceId={shownAnalysis?.viceCaptain.playerId}
+            />
+          )}
         </Card>
       )}
 
