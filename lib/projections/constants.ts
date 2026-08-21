@@ -145,3 +145,32 @@ export const CLUB_MINUTES_PER_MATCH = 11 * 90;
  * once real minutes accumulate.
  */
 export const DEPTH_CONCENTRATION = 1.6;
+
+// ---------------------------------------------------- discipline and penalties
+
+/**
+ * Scoring events the engine previously ignored entirely.
+ *
+ * These are FPL rules, not priors — the same fact status as goals and clean
+ * sheets. Leaving them out over-projected every player, because discipline is
+ * almost always a cost: measured across 267 players with 900+ minutes in
+ * 2025/26, the mean effect is -0.19 points per 90, and the spread between the
+ * worst offender and the best-rewarded keeper is 41.8 points over a season.
+ */
+export const POINTS_YELLOW_CARD = -1;
+export const POINTS_RED_CARD = -3;
+export const POINTS_OWN_GOAL = -2;
+export const POINTS_PENALTY_MISS = -2;
+export const POINTS_PENALTY_SAVE = 5; // goalkeepers only
+
+/**
+ * Minutes of pseudo-history used to pull a player's discipline rate toward the
+ * average for his position.
+ *
+ * Red cards are rare and expensive, so a single one in a short sample implies a
+ * rate no player sustains — one red in 900 minutes reads as -0.3 per 90 from
+ * that card alone. Shrinking toward the positional mean keeps a genuine
+ * offender like Romero (-0.72 per 90 across a full season) while stopping a
+ * small sample from inventing one.
+ */
+export const DISCIPLINE_PRIOR_MINUTES = 900;

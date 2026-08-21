@@ -28,6 +28,8 @@ export interface PointsBreakdown {
   defensiveContribution: number;
   bonus: number;
   goalsConceded: number;
+  /** Cards, own goals and penalty events. Negative for all but a saved penalty. */
+  discipline: number;
 }
 
 export interface FixtureProjection {
@@ -78,6 +80,8 @@ export interface ProjectionContext {
    * means the club is carrying more minutes than it can give out.
    */
   depthFactorByPlayer: Map<number, number>;
+  /** Mean discipline points per 90, by position, for shrinking small samples. */
+  disciplinePriorByPosition: Record<ElementTypeId, number>;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -171,6 +175,36 @@ function allocateClubMinutes(
   return factors;
 }
 
+/** Points a player's cards, own goals and penalty events cost over a period. */
+function disciplinePoints(player: FplElement): number {
+  return (
+    player.yellow_cards * K.POINTS_YELLOW_CARD +
+    player.red_cards * K.POINTS_RED_CARD +
+    player.own_goals * K.POINTS_OWN_GOAL +
+    player.penalties_missed * K.POINTS_PENALTY_MISS +
+    player.penalties_saved * K.POINTS_PENALTY_SAVE
+  );
+}
+
+/**
+ * A player's discipline cost per 90, pulled toward the average for his
+ * position in proportion to how little history supports it.
+ *
+ * Without the shrinkage a single red card in a short sample implies a rate
+ * nobody sustains. With it, a full season of genuine offending survives intact
+ * while ten matches of bad luck does not.
+ */
+function disciplinePer90(player: FplElement, ctx: ProjectionContext): number {
+  const prior = ctx.disciplinePriorByPosition[player.element_type] ?? 0;
+  const observed = disciplinePoints(player);
+  const minutes = player.minutes;
+  // Observed points, plus the prior weighted as if it were
+  // DISCIPLINE_PRIOR_MINUTES of history, over the combined minutes.
+  const priorPoints = prior * (K.DISCIPLINE_PRIOR_MINUTES / 90);
+  const combinedNineties = (minutes + K.DISCIPLINE_PRIOR_MINUTES) / 90;
+  return (observed + priorPoints) / combinedNineties;
+}
+
 export function buildContext(
   bootstrap: FplBootstrap,
   fixtures: FplFixture[],
@@ -202,6 +236,23 @@ export function buildContext(
     list.sort((a, b) => (a.event ?? 0) - (b.event ?? 0));
   }
 
+  // Positional discipline averages, from players with enough history to mean
+  // something. Weighted by minutes so a full season counts for more than ten.
+  const disciplinePriorByPosition = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<
+    ElementTypeId,
+    number
+  >;
+  for (const type of [1, 2, 3, 4] as ElementTypeId[]) {
+    const cohort = bootstrap.elements.filter(
+      (e) => e.element_type === type && e.minutes >= 450,
+    );
+    const minutes = cohort.reduce((sum, e) => sum + e.minutes, 0);
+    disciplinePriorByPosition[type] =
+      minutes > 0
+        ? (cohort.reduce((sum, e) => sum + disciplinePoints(e), 0) / minutes) * 90
+        : 0;
+  }
+
   // Depth needs the rest of the context to exist first: raw minutes depend on
   // maxCostByPosition for players with no league history.
   const partial: ProjectionContext = {
@@ -210,6 +261,7 @@ export function buildContext(
     maxCostByPosition,
     fixturesByTeam,
     depthFactorByPlayer: new Map(),
+    disciplinePriorByPosition,
   };
 
   const byTeam = new Map<number, FplElement[]>();
@@ -237,6 +289,7 @@ export function buildContext(
     maxCostByPosition,
     fixturesByTeam,
     depthFactorByPlayer,
+    disciplinePriorByPosition,
   };
 }
 
@@ -359,6 +412,10 @@ function projectFixture(
       ? -(expectedConceded / K.GOALS_CONCEDED_PER_MINUS_ONE)
       : 0;
 
+  // Cards, own goals and penalty events. Scaled by minutes for the same reason
+  // everything else is: a player who plays half a match takes half the risk.
+  const discipline = disciplinePer90(player, ctx) * minutesShare;
+
   const breakdown: PointsBreakdown = {
     appearance,
     goals,
@@ -368,6 +425,7 @@ function projectFixture(
     defensiveContribution,
     bonus,
     goalsConceded,
+    discipline,
   };
 
   const expectedPoints = Object.values(breakdown).reduce((a, b) => a + b, 0);

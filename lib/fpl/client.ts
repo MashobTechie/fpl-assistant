@@ -59,6 +59,9 @@ const ELEMENT_FIELDS = [
   "now_cost", "status", "chance_of_playing_next_round", "news",
   "minutes", "starts", "total_points", "goals_scored", "assists", "clean_sheets",
   "saves", "bonus", "bps", "defensive_contribution",
+  // Discipline and penalty events. All carry FPL points.
+  "yellow_cards", "red_cards", "own_goals",
+  "penalties_saved", "penalties_missed",
   "expected_goals_per_90", "expected_assists_per_90", "expected_goals_conceded_per_90",
   "saves_per_90", "starts_per_90", "defensive_contribution_per_90",
   "form", "points_per_game", "selected_by_percent", "ep_next",
