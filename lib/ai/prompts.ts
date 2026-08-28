@@ -7,7 +7,9 @@
  */
 
 import type { PlayerProjection } from "@/lib/projections/engine";
+import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
 import type { FundedTarget, SquadEconomics } from "@/lib/squad/economics";
+import type { GameweekReview } from "@/lib/squad/review";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
 
 export const ANALYST_SYSTEM_PROMPT = `You are an elite Fantasy Premier League analyst. Managers come to you because you reason from data rather than repeating consensus.
@@ -24,7 +26,9 @@ NON-NEGOTIABLE RULES
 4. Treat low-confidence and price_prior players with visible caution. Say so rather than quietly ranking them.
 5. Copy player ids exactly as supplied. Never guess an id.
 6. Every transfer you suggest must be one the manager can actually make. Each target lists fundedBy — the squad players whose sale would pay for it. Name one of them as the outgoing player. Do not do the arithmetic yourself and do not suggest a move with no funding route; targets that could not be funded have already been removed from your list.
-7. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
+7. A manager gets one free transfer a week, banked to at most five. Rank your transfer ideas: priority 1 is the one move they will actually make. Anything beyond the free allowance costs four points, so mark worthATake true only where the projected gain clearly exceeds that.
+8. Chips are spent once a season and cannot be recovered. The value of each this gameweek is supplied. Default to holding; recommend play_now only when this specific week is exceptional, and say what makes it so.
+9. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
 
 HOW TO WRITE
 Confident, analytical, concise. Use FPL-native language — differential, nailed, rotation risk, fixture swing, enabler, ceiling, floor, haul. Lead with the decision, then the reasoning.
@@ -60,6 +64,12 @@ function playerRow(p: PlayerProjection): string {
 }
 
 export interface AnalysisRequest {
+  /** Free transfers available, and what a further one costs. */
+  transfers: TransferBudget;
+  /** What each remaining chip is worth this gameweek. */
+  chips: ChipValuation[];
+  /** Last gameweek's result, when one has been played. */
+  review: GameweekReview | null;
   gameweek: number;
   horizon: number;
   managerName: string | null;
@@ -113,12 +123,31 @@ export function buildAnalysisPrompt(req: AnalysisRequest): string {
       ? `\n${req.unaffordableTargets} further target(s) were excluded because no sale in this squad could fund them.`
       : "";
 
-  return `${identity}Analysing Gameweek ${gameweek}. Projection horizon: ${horizon} gameweeks.
+  const chipLines = req.chips
+    .filter((c) => c.available)
+    .map(
+      (c) =>
+        `${c.label}: ${c.gain !== null ? `worth ${c.gain.toFixed(1)} pts this gameweek. ` : ""}${c.basis}`,
+    )
+    .join("\n");
 
-=== BUDGET ===
+  const review = req.review
+    ? `\n=== LAST GAMEWEEK (GW${req.review.gameweek}) ===
+Scored ${req.review.points}${req.review.transferCost ? ` after a -${req.review.transferCost} hit` : ""}. Best possible from the same fifteen: ${req.review.bestPossible}.
+${req.review.lessons.map((l) => `- ${l}`).join("\n")}
+`
+    : "";
+
+  return `${identity}Analysing Gameweek ${gameweek}. Projection horizon: ${horizon} gameweeks.
+${review}
+=== BUDGET AND TRANSFERS ===
 Bank: £${economics.bank.toFixed(1)}m
 Squad value at selling prices: £${economics.squadValue.toFixed(1)}m
+Free transfers: ${req.transfers.free}${req.transfers.inferred ? " (inferred from public history — do not state it as certain)" : ""}. Each further transfer costs ${req.transfers.hitCost} points.
 Clubs with two or more players: ${clubs || "none"} (maximum three from any one club)
+
+=== CHIPS STILL AVAILABLE ===
+${chipLines || "None remaining."}
 
 Legend: gw = expected points in GW${gameweek}. h = expected points across the full ${horizon}-gameweek horizon. mins = projected minutes. conf = model confidence 0-1. fix = upcoming opponents with home/away and FDR 1-5. fundedBy = squad players whose sale would pay for this target.
 

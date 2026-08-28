@@ -15,6 +15,8 @@ import type {
   FplEntry,
   FplFixture,
   FplElementSummary,
+  FplEntryHistory,
+  FplLive,
   FplPicks,
 } from "./types";
 
@@ -271,5 +273,25 @@ export function resolveTargetGameweek(bootstrap: FplBootstrap): number {
 export function getElementSummary(playerId: number): Promise<FplElementSummary> {
   return cached(`element-summary:${playerId}`, 86_400, () =>
     get<FplElementSummary>(`/element-summary/${playerId}/`),
+  );
+}
+
+/**
+ * What every player actually scored in one gameweek.
+ *
+ * The results half of the product: projections say what should happen, this
+ * says what did. Cached briefly while a gameweek is live and scores still move;
+ * once finished the numbers are fixed.
+ */
+export function getLive(gameweek: number): Promise<FplLive> {
+  return cached(`live:${gameweek}`, 300, () =>
+    get<FplLive>(`/event/${gameweek}/live/`),
+  );
+}
+
+/** A manager's gameweek-by-gameweek season, and the chips they have spent. */
+export function getEntryHistory(entryId: number): Promise<FplEntryHistory> {
+  return cached(`entry-history:${entryId}`, 300, () =>
+    get<FplEntryHistory>(`/entry/${entryId}/history/`),
   );
 }

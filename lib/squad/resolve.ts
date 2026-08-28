@@ -8,10 +8,16 @@ import {
   getEntry,
   getFixtures,
   getPicks,
-  resolvePicksGameweek,
   resolveTargetGameweek,
 } from "@/lib/fpl/client";
-import { previousSeasonName } from "@/lib/fpl/client";
+import {
+  getEntryHistory,
+  getLive,
+  previousSeasonName,
+  resolvePicksGameweek,
+} from "@/lib/fpl/client";
+import { transferBudget, valueChips, type ChipValuation, type TransferBudget } from "./chips";
+import { reviewGameweek, type GameweekReview } from "./review";
 import { readPlayerHistory } from "@/lib/fpl/store";
 import type { FplElement } from "@/lib/fpl/types";
 import {
@@ -63,6 +69,12 @@ export interface ResolvedSquad {
   economics: SquadEconomics;
   /** Targets dropped because nothing in the squad could fund them. */
   unaffordableTargets: number;
+  /** Free transfers available, and what a further one costs. */
+  transfers: TransferBudget;
+  /** What each remaining chip is worth this gameweek. */
+  chips: ChipValuation[];
+  /** Last gameweek's result, when there is one and we know whose squad it was. */
+  review: GameweekReview | null;
   playerIds: number[];
 }
 
@@ -239,9 +251,37 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     economics,
   );
 
+  // Chips, transfers and the retrospective all need the manager's identity, so
+  // they are only available for an imported squad — a manual fifteen has no
+  // history to read.
+  let history = null;
+  let review: GameweekReview | null = null;
+  if (opts.entryId) {
+    history = await getEntryHistory(opts.entryId).catch(() => null);
+    const lastPlayed = resolvePicksGameweek(bootstrap);
+    if (lastPlayed !== null) {
+      const [pastPicks, live] = await Promise.all([
+        getPicks(opts.entryId, lastPlayed).catch(() => null),
+        getLive(lastPlayed).catch(() => null),
+      ]);
+      if (pastPicks && live) {
+        review = reviewGameweek(
+          lastPlayed,
+          pastPicks,
+          live,
+          bootstrap,
+          history?.current.find((c) => c.event === lastPlayed)?.overall_rank ?? null,
+        );
+      }
+    }
+  }
+
   return {
     gameweek,
     horizon,
+    transfers: transferBudget(history, gameweek),
+    chips: valueChips(optimal, squad, gameweek, history),
+    review,
     managerName,
     teamName,
     bank,

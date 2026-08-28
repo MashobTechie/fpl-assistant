@@ -50,6 +50,21 @@ export const BoomCandidateSchema = PlayerRef.extend({
 
 export const TransferIdeaSchema = z.object({
   /**
+   * Managers get one free transfer a week, so a list of three is only useful
+   * ranked. Priority 1 is the move to make; the rest are what to do next week,
+   * or with a hit if it is genuinely worth four points.
+   */
+  priority: z
+    .number()
+    .describe(
+      "1 = make this first. Rank by value: a manager with one free transfer will only make number 1.",
+    ),
+  worthATake: z
+    .boolean()
+    .describe(
+      "True only if this move justifies a -4 hit when no free transfer remains. Most do not.",
+    ),
+  /**
    * The outgoing player must be one of the target's supplied fundedBy entries.
    * Requiring it in the output is what stops a recommendation the manager
    * cannot actually execute — the constraint has to be answered, not assumed.
@@ -68,6 +83,18 @@ export const TransferIdeaSchema = z.object({
   expectedGain: z
     .string()
     .describe("Projected points swing over the stated horizon, from the supplied numbers"),
+});
+
+export const ChipAdviceSchema = z.object({
+  chip: z.enum(["bboost", "3xc", "freehit", "wildcard"]),
+  recommendation: z
+    .enum(["play_now", "hold"])
+    .describe("play_now only when this specific gameweek is genuinely the right one."),
+  reasoning: z
+    .string()
+    .describe(
+      "Cite the supplied chip value. A chip is spent once, so holding is the default and playing needs a reason.",
+    ),
 });
 
 export const GameweekAnalysisSchema = z.object({
@@ -95,7 +122,14 @@ export const GameweekAnalysisSchema = z.object({
   risks: z.array(RiskFlagSchema),
   transferIdeas: z
     .array(TransferIdeaSchema)
-    .describe("Up to three. Empty if the squad genuinely needs no changes."),
+    .describe(
+      "Up to three, ranked with priority 1 first. The manager can normally make only one for free, so number 1 must be the single best move rather than the opening of a plan.",
+    ),
+  chipAdvice: z
+    .array(ChipAdviceSchema)
+    .describe(
+      "One entry per chip still available. Default to hold — a chip spent this week cannot be spent in a better one.",
+    ),
   keyTradeoff: z
     .string()
     .describe("The one real decision this gameweek hinges on, stated as a trade-off."),

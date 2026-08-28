@@ -163,6 +163,8 @@ export interface FplFixture {
 
 /** A manager's picks for one gameweek: /api/entry/{id}/event/{gw}/picks/ */
 export interface FplPicks {
+  /** Chip active this gameweek: "3xc", "bboost", "freehit", "wildcard", or null. */
+  active_chip?: string | null;
   picks: Array<{
     element: number;
     position: number; // 1–15; 1–11 started, 12–15 bench in order
@@ -187,6 +189,8 @@ export interface FplPicks {
     value: number; // squad value incl. bank
     event_transfers: number;
     event_transfers_cost?: number; // points deducted for extra transfers
+    points?: number;
+    points_on_bench?: number;
   };
 }
 
@@ -240,4 +244,45 @@ export interface FplPastSeason {
 
 export interface FplElementSummary {
   history_past: FplPastSeason[];
+}
+
+/** Per-player scoring for one gameweek, from /event/{gw}/live/. */
+export interface FplLive {
+  elements: Array<{
+    id: number;
+    stats: {
+      minutes: number;
+      total_points: number;
+      goals_scored: number;
+      assists: number;
+      clean_sheets: number;
+      goals_conceded: number;
+      own_goals: number;
+      penalties_missed: number;
+      penalties_saved: number;
+      saves: number;
+      yellow_cards: number;
+      red_cards: number;
+      bonus: number;
+      bps: number;
+      defensive_contribution: number;
+    };
+  }>;
+}
+
+/** A manager's season so far, from /entry/{id}/history/. */
+export interface FplEntryHistory {
+  current: Array<{
+    event: number;
+    points: number;
+    total_points: number;
+    rank: number | null;
+    overall_rank: number | null;
+    event_transfers: number;
+    event_transfers_cost: number;
+    points_on_bench: number;
+    value: number;
+    bank: number;
+  }>;
+  chips: Array<{ name: string; event: number }>;
 }
