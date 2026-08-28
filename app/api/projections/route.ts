@@ -54,5 +54,10 @@ export async function POST(request: Request) {
     teamName: resolved.teamName,
     bank: resolved.bank,
     squadValue: resolved.squadValue,
+    // All free and all deterministic, so they belong on the fast half rather
+    // than behind a paid analyst call.
+    review: resolved.review,
+    chips: resolved.chips,
+    transfers: resolved.transfers,
   });
 }

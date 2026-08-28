@@ -9,6 +9,7 @@ import type {
 } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { LineupTable } from "./LineupTable";
+import { ReviewPanel } from "./ReviewPanel";
 import { PitchView } from "./PitchView";
 import { SquadBuilder } from "./SquadBuilder";
 import { Button, Card, SectionHeading, SegmentedControl, StatTile } from "./ui";
@@ -343,6 +344,8 @@ export function DashboardClient({
           )}
         </Card>
       )}
+
+      {projections?.review && <ReviewPanel review={projections.review} />}
 
       {restoring && !projections && (
         <Card className="p-5">

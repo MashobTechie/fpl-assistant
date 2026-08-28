@@ -2,7 +2,9 @@
 
 import type { GameweekAnalysis } from "@/lib/ai/schema";
 import type { PlayerProjection } from "@/lib/projections/engine";
+import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
+import type { GameweekReview } from "@/lib/squad/review";
 
 export interface PlayerListItem {
   id: number;
@@ -50,6 +52,10 @@ export interface ProjectionsResponse {
   teamName: string | null;
   bank: number | null;
   squadValue: number | null;
+  /** Last gameweek's result. Null for a manual squad, which has no history. */
+  review: GameweekReview | null;
+  chips: ChipValuation[];
+  transfers: TransferBudget;
 }
 
 export interface AnalysisResponse {
