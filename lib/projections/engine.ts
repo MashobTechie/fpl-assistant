@@ -17,6 +17,7 @@ import type {
   FplTeam,
 } from "@/lib/fpl/types";
 import { POSITION_NAME } from "@/lib/fpl/types";
+import type { PastSeasonTotals } from "@/lib/fpl/history";
 import * as K from "./constants";
 
 export interface PointsBreakdown {
@@ -43,7 +44,17 @@ export interface FixtureProjection {
 }
 
 /** Where a player's underlying rates came from — drives confidence. */
-export type DataBasis = "current_season" | "last_season" | "price_prior";
+/**
+ * Where a player's rates come from.
+ *
+ * `blended` is the normal state for most of a season: some current-season
+ * evidence, shrunk toward last season in proportion to how little there is.
+ */
+export type DataBasis =
+  | "current_season"
+  | "blended"
+  | "last_season"
+  | "price_prior";
 
 export interface PlayerProjection {
   playerId: number;
@@ -69,6 +80,12 @@ export interface PlayerProjection {
 }
 
 export interface ProjectionContext {
+  /**
+   * Last season's totals by element code, used to shrink thin current-season
+   * samples. Empty when the back-fill has not run, in which case the engine
+   * behaves as it did before: current season alone, or a price prior.
+   */
+  lastSeasonByCode: Map<number, PastSeasonTotals>;
   /** 0 during pre-season, which changes how season totals are interpreted. */
   completedGameweeks: number;
   teamsById: Map<number, FplTeam>;
@@ -256,6 +273,11 @@ function bonusFromBps(bps90: number, curve: ProjectionContext["bonusCurve"]): nu
 export function buildContext(
   bootstrap: FplBootstrap,
   fixtures: FplFixture[],
+  /**
+   * Last season by element code. Optional so the CLI scripts, which have no
+   * database, keep working — they simply lose the shrinkage.
+   */
+  lastSeasonByCode: Map<number, PastSeasonTotals> = new Map(),
 ): ProjectionContext {
   const completedGameweeks = bootstrap.events.filter((e) => e.finished).length;
 
@@ -365,6 +387,7 @@ export function buildContext(
   // Depth needs the rest of the context to exist first: raw minutes depend on
   // maxCostByPosition for players with no league history.
   const partial: ProjectionContext = {
+    lastSeasonByCode,
     completedGameweeks,
     teamsById,
     maxCostByPosition,
@@ -395,6 +418,7 @@ export function buildContext(
   }
 
   return {
+    lastSeasonByCode,
     completedGameweeks,
     teamsById,
     maxCostByPosition,
@@ -428,13 +452,41 @@ function availabilityOf(player: FplElement): number {
 function baseMinutesPerMatch(
   player: FplElement,
   ctx: ProjectionContext,
-): { minutes: number; basis: DataBasis } {
-  if (player.minutes > 0) {
-    const games =
-      ctx.completedGameweeks > 0 ? ctx.completedGameweeks : K.GAMES_IN_SEASON;
+): { minutes: number; basis: DataBasis; weight: number } {
+  const past = ctx.lastSeasonByCode.get(player.code);
+  const pastMinutes = past && past.minutes > 0 ? past.minutes / K.GAMES_IN_SEASON : null;
+
+  if (ctx.completedGameweeks === 0) {
+    // Pre-season the bootstrap still carries last season's totals, or history
+    // has been overlaid onto it, so a full 38 games is the right divisor.
+    if (player.minutes > 0) {
+      return {
+        minutes: clamp(player.minutes / K.GAMES_IN_SEASON, 0, 90),
+        basis: "last_season",
+        weight: 0,
+      };
+    }
+  } else if (player.minutes > 0 || pastMinutes !== null) {
+    // Shrink this season toward last season by how much of it exists. One
+    // match is evidence, but not thirty-eight matches' worth.
+    const current = player.minutes / ctx.completedGameweeks;
+    const weight = player.minutes / (player.minutes + K.PRIOR_MINUTES);
+
+    const minutes =
+      pastMinutes === null
+        ? current
+        : weight * current + (1 - weight) * pastMinutes;
+
     const basis: DataBasis =
-      ctx.completedGameweeks > 0 ? "current_season" : "last_season";
-    return { minutes: clamp(player.minutes / games, 0, 90), basis };
+      pastMinutes === null
+        ? "current_season"
+        : weight >= 0.5
+          ? "current_season"
+          : player.minutes === 0
+            ? "last_season"
+            : "blended";
+
+    return { minutes: clamp(minutes, 0, 90), basis, weight };
   }
 
   // No league history: price is the only signal that the club rates them.
@@ -443,20 +495,41 @@ function baseMinutesPerMatch(
   const minutes =
     K.NO_HISTORY_MIN_MINUTES +
     (K.NO_HISTORY_MAX_MINUTES - K.NO_HISTORY_MIN_MINUTES) * Math.pow(ratio, 1.5);
-  return { minutes, basis: "price_prior" };
+  return { minutes, basis: "price_prior", weight: 0 };
 }
 
-/** Per-90 attacking rates, falling back to positional priors for new players. */
-function attackingRates(player: FplElement, basis: DataBasis) {
-  if (basis === "price_prior") {
+/**
+ * Per-90 attacking rates.
+ *
+ * Blended on the same weight as minutes, for the same reason: a rate computed
+ * from ninety minutes is a rate computed from one shot count. Falls back to
+ * positional priors only for players with no record at all.
+ */
+function attackingRates(
+  player: FplElement,
+  ctx: ProjectionContext,
+  base: { basis: DataBasis; weight: number },
+) {
+  if (base.basis === "price_prior") {
     return {
       xg90: K.NO_HISTORY_XG90[player.element_type],
       xa90: K.NO_HISTORY_XA90[player.element_type],
     };
   }
-  return {
+
+  const current = {
     xg90: player.expected_goals_per_90 ?? 0,
     xa90: player.expected_assists_per_90 ?? 0,
+  };
+
+  const past = ctx.lastSeasonByCode.get(player.code);
+  if (!past || past.minutes <= 0 || ctx.completedGameweeks === 0) return current;
+
+  const w = base.weight;
+  const per90 = (total: number) => (total / past.minutes) * 90;
+  return {
+    xg90: w * current.xg90 + (1 - w) * per90(past.expected_goals),
+    xa90: w * current.xa90 + (1 - w) * per90(past.expected_assists),
   };
 }
 
@@ -464,7 +537,7 @@ function projectFixture(
   player: FplElement,
   fixture: FplFixture,
   ctx: ProjectionContext,
-  base: { minutes: number; basis: DataBasis },
+  base: { minutes: number; basis: DataBasis; weight: number },
   availability: number,
 ): FixtureProjection {
   const isHome = fixture.team_h === player.team;
@@ -486,7 +559,7 @@ function projectFixture(
   const pAppear = clamp(base.minutes / 25, 0, 0.98) * availability;
   const pSixty = clamp((base.minutes - 15) / 65, 0, 0.95) * availability;
 
-  const { xg90, xa90 } = attackingRates(player, base.basis);
+  const { xg90, xa90 } = attackingRates(player, ctx, base);
 
   const appearance =
     pAppear * K.POINTS_APPEARANCE_SHORT +
@@ -569,15 +642,23 @@ function projectFixture(
 
 function assessConfidence(
   player: FplElement,
-  base: { minutes: number; basis: DataBasis },
+  base: { minutes: number; basis: DataBasis; weight: number },
   ctx: ProjectionContext,
 ): number {
+  // Confidence follows the evidence actually behind the projection, which
+  // early in a season is mostly last season's. Bucketing on current-season
+  // minutes alone put every player in the league at 0.40 after one gameweek,
+  // including those with three thousand minutes of history feeding the blend.
+  const past = ctx.lastSeasonByCode.get(player.code);
+  const effectiveMinutes =
+    player.minutes + (past?.minutes ?? 0) * K.PRIOR_CONFIDENCE_DISCOUNT;
+
   let confidence: number;
   if (base.basis === "price_prior") {
     confidence = 0.25;
-  } else if (player.minutes > 900) {
+  } else if (effectiveMinutes > 900) {
     confidence = 0.9;
-  } else if (player.minutes > 270) {
+  } else if (effectiveMinutes > 270) {
     confidence = 0.65;
   } else {
     confidence = 0.4;
@@ -585,15 +666,17 @@ function assessConfidence(
 
   if (player.status !== "a") confidence *= 0.7;
   if (player.chance_of_playing_next_round !== null) confidence *= 0.8;
-  // Pre-season rates describe a different team shape than the one about to play.
-  if (ctx.completedGameweeks === 0) confidence *= 0.85;
+  // Leaning on the prior costs confidence, in proportion to how far. At full
+  // current-season weight this is a no-op; on last season alone it is the same
+  // 0.85 that used to apply flatly through pre-season.
+  confidence *= 0.85 + 0.15 * base.weight;
 
   return clamp(confidence, 0.05, 0.95);
 }
 
 function assessRisks(
   player: FplElement,
-  base: { minutes: number; basis: DataBasis },
+  base: { minutes: number; basis: DataBasis; weight: number },
   perFixture: FixtureProjection[],
   availability: number,
   depthFactor: number,

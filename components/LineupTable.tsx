@@ -4,7 +4,11 @@ import { ConfidenceBadge, FdrPill } from "./ui";
 function BasisNote({ basis }: { basis: PlayerProjection["dataBasis"] }) {
   if (basis === "current_season") return null;
   const text =
-    basis === "price_prior" ? "no PL history" : "last season's numbers";
+    basis === "price_prior"
+      ? "no PL history"
+      : basis === "blended"
+        ? "mostly last season"
+        : "last season's numbers";
   return (
     <span className="ml-1.5 text-[11px] text-[--color-ink-faint]">({text})</span>
   );

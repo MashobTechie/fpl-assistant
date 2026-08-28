@@ -219,3 +219,28 @@ export const BONUS_CURVE_BUCKETS = 12;
  *   2  club minutes constraint, discipline, team defence, BPS-based bonus
  */
 export const PROJECTION_ENGINE_VERSION = "2";
+
+/**
+ * How much current-season evidence it takes to half-outweigh last season.
+ *
+ * A player's rate this season is blended against last season's with weight
+ * `minutes / (minutes + PRIOR_MINUTES)`. At 900 minutes — ten full matches —
+ * the two carry equal weight; after one match this season counts for about 9%.
+ *
+ * The alternative, switching outright the moment a gameweek finishes, throws
+ * away thirty-eight matches to rely on one. Measured on 2026-08-28, one
+ * gameweek into the season, that put 306 of 616 players on a price prior
+ * purely for missing the opening fixture — Saliba and Timber projected at
+ * 0.00 xPts despite full seasons behind them — and let a single game set
+ * everyone's scoring rate.
+ */
+export const PRIOR_MINUTES = 900;
+
+/**
+ * How much last season's minutes count toward confidence.
+ *
+ * Real evidence, but it describes a squad, role and manager that may have
+ * changed over a summer — so the same minutes are worth less than minutes
+ * played this season.
+ */
+export const PRIOR_CONFIDENCE_DISCOUNT = 0.5;

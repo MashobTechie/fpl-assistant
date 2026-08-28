@@ -11,6 +11,8 @@ import {
   resolvePicksGameweek,
   resolveTargetGameweek,
 } from "@/lib/fpl/client";
+import { previousSeasonName } from "@/lib/fpl/client";
+import { readPlayerHistory } from "@/lib/fpl/store";
 import type { FplElement } from "@/lib/fpl/types";
 import {
   buildContext,
@@ -112,11 +114,17 @@ interface ResolveOptions {
 }
 
 export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad> {
-  const [bootstrap, fixtures] = await Promise.all([getBootstrap(), getFixtures()]);
+  // Last season shrinks thin current-season samples. Fetched alongside, not
+  // after, because it is needed before any projection runs.
+  const [bootstrap, fixtures, lastSeason] = await Promise.all([
+    getBootstrap(),
+    getFixtures(),
+    readPlayerHistory(previousSeasonName()),
+  ]);
 
   const gameweek = opts.gameweek ?? resolveTargetGameweek(bootstrap);
   const horizon = opts.horizon ?? DEFAULT_HORIZON;
-  const ctx = buildContext(bootstrap, fixtures);
+  const ctx = buildContext(bootstrap, fixtures, lastSeason);
 
   const elementsById = new Map<number, FplElement>(
     bootstrap.elements.map((e) => [e.id, e]),

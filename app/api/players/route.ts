@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { cached } from "@/lib/fpl/cache";
-import { getBootstrap, getFixtures, resolveTargetGameweek } from "@/lib/fpl/client";
+import {
+  getBootstrap,
+  getFixtures,
+  previousSeasonName,
+  resolveTargetGameweek,
+} from "@/lib/fpl/client";
+import { readPlayerHistory } from "@/lib/fpl/store";
 import { buildContext, projectPlayer } from "@/lib/projections/engine";
 
 export const runtime = "nodejs";
@@ -12,9 +18,13 @@ export const runtime = "nodejs";
  * projection objects would be an order of magnitude larger over the wire.
  */
 async function buildPlayerList() {
-  const [bootstrap, fixtures] = await Promise.all([getBootstrap(), getFixtures()]);
+  const [bootstrap, fixtures, lastSeason] = await Promise.all([
+    getBootstrap(),
+    getFixtures(),
+    readPlayerHistory(previousSeasonName()),
+  ]);
   const gameweek = resolveTargetGameweek(bootstrap);
-  const ctx = buildContext(bootstrap, fixtures);
+  const ctx = buildContext(bootstrap, fixtures, lastSeason);
 
   const players = bootstrap.elements
     .map((el) => {
