@@ -8,7 +8,8 @@
 
 import type { PlayerProjection } from "@/lib/projections/engine";
 import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
-import type { FundedTarget, SquadEconomics } from "@/lib/squad/economics";
+import type { SquadEconomics } from "@/lib/squad/economics";
+import type { TransferCandidate } from "@/lib/squad/transfers";
 import type { GameweekReview } from "@/lib/squad/review";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
 
@@ -25,8 +26,10 @@ NON-NEGOTIABLE RULES
 3. The starting XI you receive is mathematically optimal for the supplied projections. Override it only where rule 2 gives you grounds, and state those grounds explicitly.
 4. Treat low-confidence and price_prior players with visible caution. Say so rather than quietly ranking them.
 5. Copy player ids exactly as supplied. Never guess an id.
-6. Every transfer you suggest must be one the manager can actually make. Each target lists fundedBy — the squad players whose sale would pay for it. Name one of them as the outgoing player. Do not do the arithmetic yourself and do not suggest a move with no funding route; targets that could not be funded have already been removed from your list.
-7. A manager gets one free transfer a week, banked to at most five. Rank your transfer ideas: priority 1 is the one move they will actually make. Anything beyond the free allowance costs four points, so mark worthATake true only where the projected gain clearly exceeds that.
+6. Every transfer you suggest must come from the RANKED TRANSFERS list, copied exactly. Each line is already legal — position, budget and the three-per-club limit all hold — and already scored across the whole horizon. Do not invent a swap, do not pair players yourself, and do not do the arithmetic: horizonGain is the number that decides it.
+7. A manager gets one free transfer a week, banked to at most five. Priority 1 is the single move they will actually make. Anything beyond the free allowance costs four points, so mark worthATake true only where horizonGain clearly exceeds that.
+8. Judge a transfer on horizonGain, not on thisWeek. A move that wins on Saturday and loses over the following month is a bad move. Read the shape strip: a gain that only arrives in three weeks is an argument for waiting, and you should say so rather than recommending it now.
+9. Chips are a timing decision. Each carries its value this gameweek, the best gameweek in the horizon, and a timing line. Never advise playing a chip in a week the data says is worse than one ahead of it — say which week to wait for, and why.
 8. Chips are spent once a season and cannot be recovered. The value of each this gameweek is supplied. Default to holding; recommend play_now only when this specific week is exceptional, and say what makes it so.
 9. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
 
@@ -78,8 +81,8 @@ export interface AnalysisRequest {
   optimal: OptimisedSquad;
   /** Bank, squad value, selling prices and club counts. */
   economics: SquadEconomics;
-  /** Targets the manager could actually fund, each with its funding route. */
-  transferTargets: FundedTarget[];
+  /** Legal swaps, ranked by horizon gain. Already decided, not raw material. */
+  transferCandidates: TransferCandidate[];
   /** How many targets were dropped as unaffordable, so the omission is stated. */
   unaffordableTargets: number;
 }
@@ -95,13 +98,21 @@ function squadRow(p: PlayerProjection, economics: SquadEconomics): string {
     : base;
 }
 
-function targetRow(t: FundedTarget): string {
-  const parts = [playerRow(t.player)];
-  parts.push(
-    `fundedBy:[${t.fundedBy.map((f) => `${f.name} £${f.sellPrice.toFixed(1)}m`).join(", ")}]`,
-  );
-  if (t.clubFull) parts.push("CLUB_FULL");
-  return parts.join(" | ");
+function candidateRow(c: TransferCandidate, rank: number): string {
+  // The per-gameweek strip is the point: it shows whether a gain arrives now
+  // or in a month, which is the difference between transferring and waiting.
+  const shape = c.byGameweek
+    .map((g) => `GW${g.gameweek}${g.gain >= 0 ? "+" : ""}${g.gain.toFixed(1)}`)
+    .join(" ");
+  return [
+    `#${rank}`,
+    `OUT id=${c.out.playerId} ${c.out.name} (${c.out.team}, £${c.out.price.toFixed(1)}m, h=${c.out.horizonPoints})`,
+    `IN id=${c.in.playerId} ${c.in.name} (${c.in.team}, £${c.in.price.toFixed(1)}m, h=${c.in.horizonPoints})`,
+    `horizonGain=${c.horizonGain >= 0 ? "+" : ""}${c.horizonGain}`,
+    `thisWeek=${c.immediateGain >= 0 ? "+" : ""}${c.immediateGain}`,
+    `bankAfter=£${c.bankAfter.toFixed(1)}m`,
+    `shape:[${shape}]`,
+  ].join(" | ");
 }
 
 export function buildAnalysisPrompt(req: AnalysisRequest): string {
@@ -157,8 +168,9 @@ ${optimal.startingXI.map((p) => squadRow(p, economics)).join("\n")}
 === BENCH (in current order) ===
 ${optimal.bench.map((p) => squadRow(p, economics)).join("\n")}
 
-=== TRANSFER TARGETS THIS MANAGER CAN AFFORD ===
-${req.transferTargets.map(targetRow).join("\n")}${omitted}
+=== RANKED TRANSFERS (legal, funded, ordered by horizon gain) ===
+Each line is a complete swap that already satisfies position, budget and the three-per-club limit. horizonGain is the net expected points across all ${horizon} gameweeks; thisWeek is the net gain in GW${gameweek} alone; shape shows where the gain falls week by week.
+${req.transferCandidates.map((c, i) => candidateRow(c, i + 1)).join("\n")}${omitted}
 
 Produce your gameweek analysis. Ground every claim in the numbers above.`;
 }

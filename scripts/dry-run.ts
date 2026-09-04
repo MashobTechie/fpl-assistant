@@ -98,7 +98,7 @@ async function main() {
     review: resolved.review,
     squad: resolved.squad,
     optimal: resolved.optimal,
-    transferTargets: resolved.transferTargets,
+    transferCandidates: resolved.transferCandidates,
   });
 
   const chars = ANALYST_SYSTEM_PROMPT.length + prompt.length;

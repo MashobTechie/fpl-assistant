@@ -32,6 +32,7 @@ import {
   type SquadEconomics,
 } from "./economics";
 import { optimiseSquad, type OptimisedSquad } from "./optimizer";
+import { rankTransfers, type TransferCandidate } from "./transfers";
 import {
   squadCost,
   validateSquadComposition,
@@ -65,6 +66,8 @@ export interface ResolvedSquad {
   squad: PlayerProjection[];
   optimal: OptimisedSquad;
   transferTargets: FundedTarget[];
+  /** Legal swaps, ranked by what they earn across the whole horizon. */
+  transferCandidates: TransferCandidate[];
   /** Bank, squad value, selling prices and club counts. */
   economics: SquadEconomics;
   /** Targets dropped because nothing in the squad could fund them. */
@@ -276,11 +279,19 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     }
   }
 
+  const transferCandidates = rankTransfers(
+    squad,
+    affordable.map((t) => t.player),
+    economics,
+    gameweek,
+    horizon,
+  );
+
   return {
     gameweek,
     horizon,
     transfers: transferBudget(history, gameweek),
-    chips: valueChips(optimal, squad, gameweek, history),
+    chips: valueChips(optimal, squad, gameweek, history, horizon),
     review,
     managerName,
     teamName,
@@ -289,6 +300,7 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     squad,
     optimal,
     transferTargets: affordable,
+    transferCandidates,
     economics,
     unaffordableTargets: unaffordable,
     playerIds,

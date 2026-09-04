@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       review: resolved.review,
       squad: resolved.squad,
       optimal: resolved.optimal,
-      transferTargets: resolved.transferTargets,
+      transferCandidates: resolved.transferCandidates,
     });
   } catch (err) {
     await releaseAnalysis(supabase);
