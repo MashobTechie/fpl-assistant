@@ -19,6 +19,13 @@ import type {
 import { POSITION_NAME } from "@/lib/fpl/types";
 import type { PastSeasonTotals } from "@/lib/fpl/history";
 import * as K from "./constants";
+import {
+  cohortThreshold,
+  missingPriors,
+  positionalPrior,
+  shrinkRate,
+  type Prior,
+} from "./priors";
 
 export interface PointsBreakdown {
   appearance: number;
@@ -109,7 +116,7 @@ export interface ProjectionContext {
    */
   depthFactorByPlayer: Map<number, number>;
   /** Mean discipline points per 90, by position, for shrinking small samples. */
-  disciplinePriorByPosition: Record<ElementTypeId, number>;
+  disciplinePriorByPosition: Record<ElementTypeId, Prior | null>;
   /**
    * League-average defensive contributions per 90, by position.
    *
@@ -119,7 +126,9 @@ export interface ProjectionContext {
    * established defender in the league, and that alone was worth 6.6 points
    * across the horizon and had the model selling a Manchester City starter.
    */
-  defconPriorByPosition: Record<ElementTypeId, number>;
+  defconPriorByPosition: Record<ElementTypeId, Prior | null>;
+  /** Saves per 90 for keepers — the fifth rate that was never shrunk. */
+  savesPriorByPosition: Record<ElementTypeId, Prior | null>;
   /**
    * How a club's defence compares with the league, from expected goals
    * conceded. Below 1 concedes less than average.
@@ -258,7 +267,7 @@ function disciplinePoints(player: FplElement): number {
  * while ten matches of bad luck does not.
  */
 function disciplinePer90(player: FplElement, ctx: ProjectionContext): number {
-  const prior = ctx.disciplinePriorByPosition[player.element_type] ?? 0;
+  const prior = ctx.disciplinePriorByPosition[player.element_type]?.value ?? 0;
   const observed = disciplinePoints(player);
   const minutes = player.minutes;
   // Observed points, plus the prior weighted as if it were
@@ -355,45 +364,43 @@ export function buildContext(
     list.sort((a, b) => (a.event ?? 0) - (b.event ?? 0));
   }
 
-  // Positional discipline averages, from players with enough history to mean
-  // something. Weighted by minutes so a full season counts for more than ten.
-  const disciplinePriorByPosition = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<
-    ElementTypeId,
-    number
-  >;
-  const defconPriorByPosition = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<
-    ElementTypeId,
-    number
-  >;
-  // Who counts toward a positional average: roughly half the minutes played so
-  // far, floored at one match and capped at five.
-  //
-  // A fixed 450 silently emptied every cohort early in a season — three
-  // gameweeks in, nobody in the league has 450 minutes — and an empty cohort
-  // returns a prior of zero, which is not "no information" but a confident
-  // claim that defenders never make defensive contributions and nobody is ever
-  // booked. Shrinking toward that is worse than not shrinking at all.
+  // Positional averages, all built the same way and all able to be absent.
+  // See lib/projections/priors.ts for why an unusable prior is null and never
+  // zero — shrinking toward zero asserts that defenders make no defensive
+  // contributions and nobody is ever booked.
   const seasonMinutes = [...matchesPlayedByTeam.values()].sort((a, b) => a - b);
   const played = seasonMinutes.length
     ? seasonMinutes[Math.floor(seasonMinutes.length / 2)]
     : K.GAMES_IN_SEASON;
-  const cohortMinutes = clamp(played * 45, 90, 450);
+  const minCohortMinutes = cohortThreshold(played);
+
+  const noPriors = { 1: null, 2: null, 3: null, 4: null };
+  const disciplinePriorByPosition: Record<ElementTypeId, Prior | null> = { ...noPriors };
+  const defconPriorByPosition: Record<ElementTypeId, Prior | null> = { ...noPriors };
+  const savesPriorByPosition: Record<ElementTypeId, Prior | null> = { ...noPriors };
 
   for (const type of [1, 2, 3, 4] as ElementTypeId[]) {
-    const cohort = bootstrap.elements.filter(
-      (e) => e.element_type === type && e.minutes >= cohortMinutes,
+    disciplinePriorByPosition[type] = positionalPrior(
+      bootstrap.elements, type, minCohortMinutes, disciplinePoints);
+    defconPriorByPosition[type] = positionalPrior(
+      bootstrap.elements, type, minCohortMinutes, (e) => e.defensive_contribution ?? 0);
+    savesPriorByPosition[type] = positionalPrior(
+      bootstrap.elements, type, minCohortMinutes, (e) => e.saves ?? 0);
+  }
+
+  // Say so when a prior is unusable. Every rate still projects — the
+  // observation simply stands unshrunk — but that is a materially different
+  // model, and it went unnoticed precisely because it was silent.
+  const gaps = missingPriors({
+    discipline: disciplinePriorByPosition,
+    defcon: defconPriorByPosition,
+    saves: savesPriorByPosition,
+  });
+  if (gaps.length > 0) {
+    console.warn(
+      `[projections] no usable prior for ${gaps.join("; ")} at a ` +
+        `${minCohortMinutes}-minute cohort — those rates project unshrunk.`,
     );
-    const minutes = cohort.reduce((sum, e) => sum + e.minutes, 0);
-    disciplinePriorByPosition[type] =
-      minutes > 0
-        ? (cohort.reduce((sum, e) => sum + disciplinePoints(e), 0) / minutes) * 90
-        : 0;
-    defconPriorByPosition[type] =
-      minutes > 0
-        ? (cohort.reduce((sum, e) => sum + (e.defensive_contribution ?? 0), 0) /
-            minutes) *
-          90
-        : 0;
   }
 
   // How each club's defence compares with the league, from expected goals
@@ -469,6 +476,7 @@ export function buildContext(
     depthFactorByPlayer: new Map(),
     disciplinePriorByPosition,
     defconPriorByPosition,
+    savesPriorByPosition,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -503,6 +511,7 @@ export function buildContext(
     depthFactorByPlayer,
     disciplinePriorByPosition,
     defconPriorByPosition,
+    savesPriorByPosition,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -724,16 +733,24 @@ function projectFixture(
 
   const saves =
     pos === 1
-      ? ((player.saves_per_90 ?? 0) * minutesShare) / K.SAVES_PER_POINT
+      ? (shrinkRate(
+          player.saves_per_90 ?? 0,
+          ctx.savesPriorByPosition[pos],
+          base.weight,
+        ) *
+          minutesShare) /
+        K.SAVES_PER_POINT
       : 0;
 
   // Defensive contribution is a threshold, not a rate — needs a distribution.
   // Shrunk toward the positional average on the same weight the attacking
   // rates use. A threshold statistic read off two matches is otherwise taken
   // at face value, and the Poisson tail turns that noise into points.
-  const defconRate =
-    base.weight * (player.defensive_contribution_per_90 ?? 0) +
-    (1 - base.weight) * ctx.defconPriorByPosition[pos];
+  const defconRate = shrinkRate(
+    player.defensive_contribution_per_90 ?? 0,
+    ctx.defconPriorByPosition[pos],
+    base.weight,
+  );
   const defconLambda = defconRate * minutesShare;
   const defensiveContribution =
     poissonAtLeast(defconLambda, K.DEFCON_THRESHOLD[pos]) *
