@@ -117,6 +117,7 @@ function candidateRow(c: TransferCandidate, rank: number): string {
     `OUT id=${c.out.playerId} ${c.out.name} (${c.out.team}, £${c.out.price.toFixed(1)}m, h=${c.out.horizonPoints})`,
     `IN id=${c.in.playerId} ${c.in.name} (${c.in.team}, £${c.in.price.toFixed(1)}m, h=${c.in.horizonPoints})`,
     `horizonGain=${c.horizonGain >= 0 ? "+" : ""}${c.horizonGain}`,
+    `adjustedGain=${c.adjustedGain >= 0 ? "+" : ""}${c.adjustedGain}`,
     `thisWeek=${c.immediateGain >= 0 ? "+" : ""}${c.immediateGain}`,
     `bankAfter=£${c.bankAfter.toFixed(1)}m`,
     `shape:[${shape}]`,
@@ -179,7 +180,7 @@ ${optimal.startingXI.map((p) => squadRow(p, economics)).join("\n")}
 ${optimal.bench.map((p) => squadRow(p, economics)).join("\n")}
 
 === RANKED TRANSFERS (legal, funded, ordered by horizon gain) ===
-Each line is a complete swap that already satisfies position, budget and the three-per-club limit. horizonGain is the net expected points across all ${horizon} gameweeks; thisWeek is the net gain in GW${gameweek} alone; shape shows where the gain falls week by week.
+Each line is a complete swap that already satisfies position, budget and the three-per-club limit. horizonGain is the net expected points across all ${horizon} gameweeks, and adjustedGain discounts it by how much less the incoming player's projection is trusted — rank on adjustedGain; thisWeek is the net gain in GW${gameweek} alone; shape shows where the gain falls week by week.
 ${req.transferCandidates.map((c, i) => candidateRow(c, i + 1)).join("\n")}${omitted}
 
 Produce your gameweek analysis. Ground every claim in the numbers above.`;

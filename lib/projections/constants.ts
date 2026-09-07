@@ -132,6 +132,18 @@ export const GAMES_IN_SEASON = 38;
 export const CLUB_MINUTES_PER_MATCH = 11 * 90;
 
 /**
+ * The two budgets a club actually fields, kept apart.
+ *
+ * A team plays exactly one goalkeeper and exactly ten outfielders, so pooling
+ * them lets a first-choice keeper compete against two dozen outfielders for a
+ * share of one number. Measured before the split: Donnarumma, playing every
+ * minute of every match, projected at 69 — the model had him substituted at
+ * the seventieth minute of a game no goalkeeper leaves.
+ */
+export const KEEPER_MINUTES_PER_MATCH = 1 * 90;
+export const OUTFIELD_MINUTES_PER_MATCH = 10 * 90;
+
+/**
  * How sharply a squeezed squad concentrates its minutes on the likely starters.
  *
  * 1.0 would scale every player at a club by the same factor, which is wrong:
@@ -218,7 +230,7 @@ export const BONUS_CURVE_BUCKETS = 12;
  *   1  first version
  *   2  club minutes constraint, discipline, team defence, BPS-based bonus
  */
-export const PROJECTION_ENGINE_VERSION = "3";
+export const PROJECTION_ENGINE_VERSION = "4";
 
 /**
  * How much current-season evidence it takes to half-outweigh last season.
@@ -255,7 +267,7 @@ export const PRIOR_MINUTES = 900;
  * player has played three full games, which is about when a new pecking order
  * is legible.
  */
-export const MINUTES_PRIOR_MINUTES = 270;
+export const MINUTES_PRIOR_MINUTES = 90;
 
 /**
  * How much last season's minutes count toward confidence.

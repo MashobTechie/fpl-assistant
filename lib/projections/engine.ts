@@ -111,6 +111,16 @@ export interface ProjectionContext {
   /** Mean discipline points per 90, by position, for shrinking small samples. */
   disciplinePriorByPosition: Record<ElementTypeId, number>;
   /**
+   * League-average defensive contributions per 90, by position.
+   *
+   * Defensive contribution scores on a threshold, so the projection runs the
+   * rate through a Poisson tail — which makes it brutally sensitive to a thin
+   * sample. Khalaili came out of 199 minutes at 14.92 per 90, above every
+   * established defender in the league, and that alone was worth 6.6 points
+   * across the horizon and had the model selling a Manchester City starter.
+   */
+  defconPriorByPosition: Record<ElementTypeId, number>;
+  /**
    * How a club's defence compares with the league, from expected goals
    * conceded. Below 1 concedes less than average.
    */
@@ -154,7 +164,26 @@ function poissonAtLeast(lambda: number, k: number): number {
  * existing availability and status handling stays untouched.
  */
 function allocateClubMinutes(
+  squad: { id: number; rawMinutes: number; availability: number; isKeeper: boolean }[],
+): Map<number, number> {
+  // Two competitions, not one. A club fields one goalkeeper and ten
+  // outfielders, and pooling them makes a first-choice keeper fight two dozen
+  // outfielders for a share of a single budget.
+  const factors = new Map<number, number>();
+  for (const [group, budget] of [
+    [squad.filter((p) => p.isKeeper), K.KEEPER_MINUTES_PER_MATCH],
+    [squad.filter((p) => !p.isKeeper), K.OUTFIELD_MINUTES_PER_MATCH],
+  ] as const) {
+    if (group.length > 0) {
+      for (const [id, factor] of allocateGroup(group, budget)) factors.set(id, factor);
+    }
+  }
+  return factors;
+}
+
+function allocateGroup(
   squad: { id: number; rawMinutes: number; availability: number }[],
+  budgetTotal: number,
 ): Map<number, number> {
   const factors = new Map<number, number>();
 
@@ -166,7 +195,7 @@ function allocateClubMinutes(
   const totalDemand = effective.reduce((sum, p) => sum + p.demand, 0);
 
   // A thin squad is left alone: there is no competition to model.
-  if (totalDemand <= K.CLUB_MINUTES_PER_MATCH || totalDemand <= 0) {
+  if (totalDemand <= budgetTotal || totalDemand <= 0) {
     for (const p of squad) factors.set(p.id, 1);
     return factors;
   }
@@ -179,8 +208,7 @@ function allocateClubMinutes(
   for (let pass = 0; pass < 6; pass++) {
     const open = effective.filter((p) => !locked.has(p.id));
     const budget =
-      K.CLUB_MINUTES_PER_MATCH -
-      [...locked.values()].reduce((sum, m) => sum + m, 0);
+      budgetTotal - [...locked.values()].reduce((sum, m) => sum + m, 0);
 
     if (open.length === 0 || budget <= 0) break;
 
@@ -333,14 +361,38 @@ export function buildContext(
     ElementTypeId,
     number
   >;
+  const defconPriorByPosition = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<
+    ElementTypeId,
+    number
+  >;
+  // Who counts toward a positional average: roughly half the minutes played so
+  // far, floored at one match and capped at five.
+  //
+  // A fixed 450 silently emptied every cohort early in a season — three
+  // gameweeks in, nobody in the league has 450 minutes — and an empty cohort
+  // returns a prior of zero, which is not "no information" but a confident
+  // claim that defenders never make defensive contributions and nobody is ever
+  // booked. Shrinking toward that is worse than not shrinking at all.
+  const seasonMinutes = [...matchesPlayedByTeam.values()].sort((a, b) => a - b);
+  const played = seasonMinutes.length
+    ? seasonMinutes[Math.floor(seasonMinutes.length / 2)]
+    : K.GAMES_IN_SEASON;
+  const cohortMinutes = clamp(played * 45, 90, 450);
+
   for (const type of [1, 2, 3, 4] as ElementTypeId[]) {
     const cohort = bootstrap.elements.filter(
-      (e) => e.element_type === type && e.minutes >= 450,
+      (e) => e.element_type === type && e.minutes >= cohortMinutes,
     );
     const minutes = cohort.reduce((sum, e) => sum + e.minutes, 0);
     disciplinePriorByPosition[type] =
       minutes > 0
         ? (cohort.reduce((sum, e) => sum + disciplinePoints(e), 0) / minutes) * 90
+        : 0;
+    defconPriorByPosition[type] =
+      minutes > 0
+        ? (cohort.reduce((sum, e) => sum + (e.defensive_contribution ?? 0), 0) /
+            minutes) *
+          90
         : 0;
   }
 
@@ -416,6 +468,7 @@ export function buildContext(
     fixturesByTeam,
     depthFactorByPlayer: new Map(),
     disciplinePriorByPosition,
+    defconPriorByPosition,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -433,6 +486,7 @@ export function buildContext(
       id: el.id,
       rawMinutes: baseMinutesPerMatch(el, partial).minutes,
       availability: availabilityOf(el),
+      isKeeper: el.element_type === 1,
     }));
     for (const [id, factor] of allocateClubMinutes(rows)) {
       depthFactorByPlayer.set(id, factor);
@@ -448,6 +502,7 @@ export function buildContext(
     fixturesByTeam,
     depthFactorByPlayer,
     disciplinePriorByPosition,
+    defconPriorByPosition,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -493,7 +548,23 @@ function baseMinutesPerMatch(
   ctx: ProjectionContext,
 ): MinutesBasis {
   const past = ctx.lastSeasonByCode.get(player.code);
-  const pastMinutes = past && past.minutes > 0 ? past.minutes / K.GAMES_IN_SEASON : null;
+  // Per league match, not per appearance.
+  //
+  // This is the quantity the depth model needs: a club distributes 990 minutes
+  // every match, so demand has to be measured on that same basis. Minutes per
+  // appearance answers a different question — what a player does once picked —
+  // and using it here erased the signal about how often he is picked, leaving
+  // every squad member looking like "would play 85 if selected". The allocator
+  // then had nothing to separate a first choice from a reserve and applied a
+  // flat haircut to the whole club: Donnarumma, a goalkeeper playing every
+  // minute, came out at 69.
+  //
+  // A player who missed time through injury is still understated by this, which
+  // is what the current-season weight is for — Gvardiol played 1370 minutes
+  // last season and 85 a match now, and the season being played should settle
+  // that rather than a season he spent injured.
+  const pastMinutes =
+    past && past.minutes > 0 ? past.minutes / K.GAMES_IN_SEASON : null;
 
   if (ctx.completedGameweeks === 0) {
     // Pre-season the bootstrap still carries last season's totals, or history
@@ -581,7 +652,20 @@ function attackingRates(
   };
 
   const past = ctx.lastSeasonByCode.get(player.code);
-  if (!past || past.minutes <= 0 || ctx.completedGameweeks === 0) return current;
+  if (ctx.completedGameweeks === 0) return current;
+
+  // No history at all — a summer signing or a promoted-club player. Their rate
+  // still needs shrinking, just toward the positional prior rather than toward
+  // a past season, or two matches of noise is taken at face value: Khalaili
+  // arrived at 0.33 xG90 from 199 minutes, a striker's rate on a defender, and
+  // the model tried to buy him over a Manchester City starter.
+  if (!past || past.minutes <= 0) {
+    const w = base.weight;
+    return {
+      xg90: w * current.xg90 + (1 - w) * K.NO_HISTORY_XG90[player.element_type],
+      xa90: w * current.xa90 + (1 - w) * K.NO_HISTORY_XA90[player.element_type],
+    };
+  }
 
   const w = base.weight;
   const per90 = (total: number) => (total / past.minutes) * 90;
@@ -644,7 +728,13 @@ function projectFixture(
       : 0;
 
   // Defensive contribution is a threshold, not a rate — needs a distribution.
-  const defconLambda = (player.defensive_contribution_per_90 ?? 0) * minutesShare;
+  // Shrunk toward the positional average on the same weight the attacking
+  // rates use. A threshold statistic read off two matches is otherwise taken
+  // at face value, and the Poisson tail turns that noise into points.
+  const defconRate =
+    base.weight * (player.defensive_contribution_per_90 ?? 0) +
+    (1 - base.weight) * ctx.defconPriorByPosition[pos];
+  const defconLambda = defconRate * minutesShare;
   const defensiveContribution =
     poissonAtLeast(defconLambda, K.DEFCON_THRESHOLD[pos]) *
     K.POINTS_DEFENSIVE_CONTRIBUTION;

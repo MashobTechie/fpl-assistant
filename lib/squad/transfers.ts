@@ -34,8 +34,19 @@ export interface TransferSide {
 export interface TransferCandidate {
   out: TransferSide;
   in: TransferSide;
-  /** Net expected points across the whole horizon. The deciding number. */
+  /** Net expected points across the whole horizon, before any discount. */
   horizonGain: number;
+  /**
+   * The gain discounted by how much less the incoming projection is trusted.
+   *
+   * Ranking on the raw gain treats every point as equally real, and it is not:
+   * a player with three matches behind him carries confidence 0.35 where an
+   * established starter carries 0.79, and the thin one's number moves far more
+   * on the next result. Selling a nailed defender for a marginal edge built on
+   * two matches is the mistake this prevents — it only ever reduces a gain, and
+   * leaves like-for-like swaps untouched.
+   */
+  adjustedGain: number;
   /** Net expected points in the immediate gameweek alone. */
   immediateGain: number;
   /**
@@ -92,6 +103,12 @@ export function rankTransfers(
       const horizonGain = incoming.totalExpectedPoints - outgoing.totalExpectedPoints;
       if (horizonGain <= 0) continue;
 
+      const trust = Math.min(
+        1,
+        incoming.confidence / Math.max(outgoing.confidence, 0.05),
+      );
+      const adjustedGain = horizonGain * trust;
+
       candidates.push({
         out: {
           playerId: outgoing.playerId,
@@ -112,6 +129,7 @@ export function rankTransfers(
           horizonPoints: round1(incoming.totalExpectedPoints),
         },
         horizonGain: round1(horizonGain),
+        adjustedGain: round1(adjustedGain),
         immediateGain: round2(
           incoming.nextGameweekPoints - outgoing.nextGameweekPoints,
         ),
@@ -124,7 +142,9 @@ export function rankTransfers(
     }
   }
 
-  candidates.sort((a, b) => b.horizonGain - a.horizonGain);
+  // Ranked on the discounted figure, so a confident, modest upgrade beats a
+  // speculative one built on a handful of matches.
+  candidates.sort((a, b) => b.adjustedGain - a.adjustedGain);
 
   // One outgoing player can headline only one suggestion, and so can one
   // incoming player. Without this the list is the same upgrade eight times
