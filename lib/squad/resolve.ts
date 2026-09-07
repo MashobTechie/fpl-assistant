@@ -33,7 +33,13 @@ import {
   type FundedTarget,
   type SquadEconomics,
 } from "./economics";
-import { optimiseSquad, type OptimisedSquad } from "./optimizer";
+import {
+  captaincyCandidates,
+  optimiseSquad,
+  type CaptaincyCandidate,
+  type OptimisedSquad,
+} from "./optimizer";
+import { planTransfers, type TransferPlan } from "./planner";
 import { rankTransfers, type TransferCandidate } from "./transfers";
 import {
   squadCost,
@@ -68,6 +74,10 @@ export interface ResolvedSquad {
   squad: PlayerProjection[];
   optimal: OptimisedSquad;
   transferTargets: FundedTarget[];
+  /** Captaincy shortlist with each player's distribution, ranked on ceiling. */
+  captaincy: CaptaincyCandidate[];
+  /** The best multi-week sequence found, against leaving the squad alone. */
+  plan: TransferPlan;
   /** Legal swaps, ranked by what they earn across the whole horizon. */
   transferCandidates: TransferCandidate[];
   /**
@@ -291,6 +301,8 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     }
   }
 
+  const budget = transferBudget(history, gameweek);
+
   const transferCandidates = rankTransfers(
     squad,
     affordable.map((t) => t.player),
@@ -310,7 +322,7 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     gameweek,
     matchesPlayed,
     horizon,
-    transfers: transferBudget(history, gameweek),
+    transfers: budget,
     chips: valueChips(optimal, squad, gameweek, history, horizon),
     review,
     managerName,
@@ -319,8 +331,18 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     squadValue,
     squad,
     optimal,
+    captaincy: captaincyCandidates(optimal.startingXI, gameweek),
     transferTargets: affordable,
     transferCandidates,
+    plan: planTransfers(
+      squad,
+      transferCandidates,
+      new Map(allProjections.map((p) => [p.playerId, p])),
+      economics,
+      budget.free,
+      gameweek,
+      horizon,
+    ),
     economics,
     unaffordableTargets: unaffordable,
     playerIds,

@@ -110,6 +110,8 @@ export async function POST(request: Request) {
       squad: resolved.squad,
       optimal: resolved.optimal,
       transferCandidates: resolved.transferCandidates,
+      captaincy: resolved.captaincy,
+      plan: resolved.plan,
     });
   } catch (err) {
     await releaseAnalysis(supabase);

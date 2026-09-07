@@ -100,6 +100,8 @@ async function main() {
     squad: resolved.squad,
     optimal: resolved.optimal,
     transferCandidates: resolved.transferCandidates,
+      captaincy: resolved.captaincy,
+      plan: resolved.plan,
   });
 
   const chars = ANALYST_SYSTEM_PROMPT.length + prompt.length;

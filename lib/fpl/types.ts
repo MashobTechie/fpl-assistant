@@ -204,6 +204,14 @@ export interface FplEntry {
   summary_overall_rank: number | null;
 }
 
+/** The inverse of POSITION_NAME, for code that starts from the label. */
+export const POSITION_ID: Record<"GKP" | "DEF" | "MID" | "FWD", ElementTypeId> = {
+  GKP: 1,
+  DEF: 2,
+  MID: 3,
+  FWD: 4,
+};
+
 export const POSITION_NAME: Record<ElementTypeId, "GKP" | "DEF" | "MID" | "FWD"> = {
   1: "GKP",
   2: "DEF",

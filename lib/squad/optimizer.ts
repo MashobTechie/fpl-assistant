@@ -9,7 +9,14 @@
  * this lineup; it does not compute it.
  */
 
+import {
+  simulateFixture,
+  summarise,
+  type PointsDistribution,
+} from "@/lib/projections/distribution";
 import type { PlayerProjection } from "@/lib/projections/engine";
+import * as K from "@/lib/projections/constants";
+import { POSITION_ID } from "@/lib/fpl/types";
 
 export interface Formation {
   defenders: number;
@@ -106,11 +113,61 @@ export function optimiseSquad(
  * is just expected points — but ceiling and certainty are what separate close
  * calls, and those are the judgement the reasoning layer adds on top.
  */
+export interface CaptaincyCandidate {
+  player: PlayerProjection;
+  distribution: PointsDistribution;
+}
+
+/**
+ * Captaincy shortlist, ranked on the upper tail rather than the mean.
+ *
+ * The armband doubles one score, so it is a bet on a haul. A forward projected
+ * 5.5 who returns 2 or 14 beats a midfielder projected 5.8 who returns 5 or 6
+ * every week, and ranking on expected points says the opposite — which is the
+ * one decision where a mean is actively the wrong statistic.
+ *
+ * Ranked on the ninetieth percentile with the mean as a tie-break, so a
+ * genuinely higher projection still wins between players of similar shape.
+ */
 export function captaincyCandidates(
   startingXI: PlayerProjection[],
+  gameweek: number,
   limit = 5,
-): PlayerProjection[] {
+): CaptaincyCandidate[] {
   return [...startingXI]
-    .sort((a, b) => b.nextGameweekPoints - a.nextGameweekPoints)
+    .map((player) => {
+      const type = POSITION_ID[player.position];
+      const fixtures = player.perFixture.filter((f) => f.gameweek === gameweek);
+
+      // A double gameweek is two independent matches, so the samples add.
+      const samples = fixtures.flatMap((f, i) =>
+        simulateFixture(
+          f,
+          K.POINTS_PER_GOAL[type],
+          K.POINTS_PER_ASSIST,
+          K.POINTS_PER_CLEAN_SHEET[type],
+          player.playerId * 7919 + gameweek * 131 + i,
+        ),
+      );
+
+      const distribution =
+        samples.length > 0
+          ? summarise(samples)
+          : {
+              mean: player.nextGameweekPoints,
+              floor: 0,
+              median: player.nextGameweekPoints,
+              ceiling: player.nextGameweekPoints,
+              pHaul: 0,
+              pBlank: 1,
+            };
+
+      return { player, distribution };
+    })
+    .sort(
+      (a, b) =>
+        b.distribution.ceiling - a.distribution.ceiling ||
+        b.distribution.mean - a.distribution.mean,
+    )
     .slice(0, limit);
 }

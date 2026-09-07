@@ -9,6 +9,8 @@
 import type { PlayerProjection } from "@/lib/projections/engine";
 import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
 import type { SquadEconomics } from "@/lib/squad/economics";
+import type { CaptaincyCandidate } from "@/lib/squad/optimizer";
+import type { TransferPlan } from "@/lib/squad/planner";
 import type { TransferCandidate } from "@/lib/squad/transfers";
 import type { GameweekReview } from "@/lib/squad/review";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
@@ -35,7 +37,9 @@ NON-NEGOTIABLE RULES
 8. A manager gets one free transfer a week, banked to at most five. Priority 1 is the single move they will actually make. Anything beyond the free allowance costs four points, so mark worthATake true only where horizonGain clearly exceeds that.
 9. Judge a transfer on horizonGain, not on thisWeek. A move that wins on Saturday and loses over the following month is a bad move. Read the shape strip: a gain that only arrives in three weeks is an argument for waiting, and you should say so rather than recommending it now.
 10. Chips are spent once a season and cannot be recovered, and each one carries its value this gameweek, the best gameweek in the horizon, and a timing line. Default to holding. Never advise playing a chip in a week the data says is worse than one ahead of it — name the week to wait for and what makes it better. Recommend playing now only when this specific week is the peak, and say so.
-11. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
+11. Captaincy is decided on the distribution, not the mean. A higher ceiling and a higher haul chance beat a slightly better average, because the armband doubles the outcome. Say what the floor is when you recommend a volatile pick.
+12. The multi-week plan banks and spends free transfers across the horizon, which a week-by-week reading cannot. Where it and the ranked list disagree, prefer the plan and explain what the ranked list is missing — usually that waiting a week buys a better move.
+13. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
 
 HOW TO WRITE
 Confident, analytical, concise. Use FPL-native language — differential, nailed, rotation risk, fixture swing, enabler, ceiling, floor, haul. Lead with the decision, then the reasoning.
@@ -89,6 +93,10 @@ export interface AnalysisRequest {
   matchesPlayed: number;
   /** Bank, squad value, selling prices and club counts. */
   economics: SquadEconomics;
+  /** Captaincy shortlist with each player's distribution, ranked on ceiling. */
+  captaincy: CaptaincyCandidate[];
+  /** The best multi-week sequence found by the planner. */
+  plan: TransferPlan;
   /** Legal swaps, ranked by horizon gain. Already decided, not raw material. */
   transferCandidates: TransferCandidate[];
   /** How many targets were dropped as unaffordable, so the omission is stated. */
@@ -178,6 +186,24 @@ ${optimal.startingXI.map((p) => squadRow(p, economics)).join("\n")}
 
 === BENCH (in current order) ===
 ${optimal.bench.map((p) => squadRow(p, economics)).join("\n")}
+
+=== CAPTAINCY (simulated, ranked on ceiling) ===
+The armband doubles a score, so it is a bet on the upper tail rather than the mean. floor is a bad week that is not unusual, ceiling the realistic good one, haul the chance of ten or more, blank the chance of two or fewer.
+${req.captaincy
+  .map(
+    (c) =>
+      `id=${c.player.playerId} | ${c.player.webName} | mean=${c.distribution.mean} | floor=${c.distribution.floor} | ceiling=${c.distribution.ceiling} | haul=${(c.distribution.pHaul * 100).toFixed(0)}% | blank=${(c.distribution.pBlank * 100).toFixed(0)}%`,
+  )
+  .join("\n")}
+
+=== BEST MULTI-WEEK PLAN FOUND ===
+A search over the whole horizon, carrying free transfers between weeks. Worth ${req.plan.gain >= 0 ? "+" : ""}${req.plan.gain} points against leaving the squad alone (${req.plan.totalPoints} against ${req.plan.doNothingPoints}). It is the best sequence examined, not a proof of the best that exists — treat it as a strong suggestion and say where you disagree.
+${req.plan.moves
+  .map(
+    (m) =>
+      `GW${m.gameweek}: ${m.transfer ? `${m.transfer.outName} -> ${m.transfer.inName}` : "bank the transfer"} | ${m.freeTransfers} free | ${m.expectedPoints} xPts${m.hitCost ? ` | -${m.hitCost} hit` : ""}`,
+  )
+  .join("\n")}
 
 === RANKED TRANSFERS (legal, funded, ordered by horizon gain) ===
 Each line is a complete swap that already satisfies position, budget and the three-per-club limit. horizonGain is the net expected points across all ${horizon} gameweeks, and adjustedGain discounts it by how much less the incoming player's projection is trusted — rank on adjustedGain; thisWeek is the net gain in GW${gameweek} alone; shape shows where the gain falls week by week.
