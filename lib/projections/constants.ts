@@ -218,7 +218,7 @@ export const BONUS_CURVE_BUCKETS = 12;
  *   1  first version
  *   2  club minutes constraint, discipline, team defence, BPS-based bonus
  */
-export const PROJECTION_ENGINE_VERSION = "2";
+export const PROJECTION_ENGINE_VERSION = "3";
 
 /**
  * How much current-season evidence it takes to half-outweigh last season.
@@ -235,6 +235,27 @@ export const PROJECTION_ENGINE_VERSION = "2";
  * everyone's scoring rate.
  */
 export const PRIOR_MINUTES = 900;
+
+/**
+ * The same shrinkage, for minutes rather than rates.
+ *
+ * Deliberately far weaker, because the two quantities settle at very different
+ * speeds. How often a player features is sticky and directly observable: three
+ * straight benchings is strong evidence someone has lost their place, and last
+ * season's three thousand minutes should not outvote it three to one. Scoring
+ * rates are the opposite — three matches of shot data is mostly noise, which is
+ * what PRIOR_MINUTES above is sized for.
+ *
+ * Sharing one prior between them meant either role reacted too slowly or rates
+ * reacted too fast. Measured three gameweeks into 2026/27, it was the former:
+ * every established player sat at 23% weight on the season actually being
+ * played, so a striker rotated out of the side still projected as a starter.
+ *
+ * At 270 — three matches — this season and last carry equal weight once a
+ * player has played three full games, which is about when a new pecking order
+ * is legible.
+ */
+export const MINUTES_PRIOR_MINUTES = 270;
 
 /**
  * How much last season's minutes count toward confidence.

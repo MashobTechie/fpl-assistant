@@ -88,6 +88,17 @@ export interface ProjectionContext {
   lastSeasonByCode: Map<number, PastSeasonTotals>;
   /** 0 during pre-season, which changes how season totals are interpreted. */
   completedGameweeks: number;
+  /**
+   * Matches each club has actually completed.
+   *
+   * Not the same as completedGameweeks, and the difference matters. A gameweek
+   * is "finished" only once every match in it is done, so mid-gameweek the
+   * count lags what players have played — measured in GW3: two finished
+   * gameweeks against 270 minutes, which divides to 135 and clamps to a
+   * flawless 90 for anyone who has featured. It also diverges permanently once
+   * a fixture is postponed or doubled up.
+   */
+  matchesPlayedByTeam: Map<number, number>;
   teamsById: Map<number, FplTeam>;
   maxCostByPosition: Record<ElementTypeId, number>;
   fixturesByTeam: Map<number, FplFixture[]>;
@@ -281,6 +292,16 @@ export function buildContext(
 ): ProjectionContext {
   const completedGameweeks = bootstrap.events.filter((e) => e.finished).length;
 
+  // Counted from the fixtures themselves, which is the only record of what a
+  // club has actually played.
+  const matchesPlayedByTeam = new Map<number, number>();
+  for (const f of fixtures) {
+    if (!f.finished) continue;
+    for (const teamId of [f.team_h, f.team_a]) {
+      matchesPlayedByTeam.set(teamId, (matchesPlayedByTeam.get(teamId) ?? 0) + 1);
+    }
+  }
+
   const teamsById = new Map(bootstrap.teams.map((t) => [t.id, t]));
 
   const maxCostByPosition = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<
@@ -389,6 +410,7 @@ export function buildContext(
   const partial: ProjectionContext = {
     lastSeasonByCode,
     completedGameweeks,
+    matchesPlayedByTeam,
     teamsById,
     maxCostByPosition,
     fixturesByTeam,
@@ -420,6 +442,7 @@ export function buildContext(
   return {
     lastSeasonByCode,
     completedGameweeks,
+    matchesPlayedByTeam,
     teamsById,
     maxCostByPosition,
     fixturesByTeam,
@@ -449,10 +472,26 @@ function availabilityOf(player: FplElement): number {
  * -season totals and must divide by games actually played — dividing a
  * three-gameweek total by 38 would make every player look like a bench warmer.
  */
+/**
+ * The minutes basis behind a projection, and how far it leans on last season.
+ *
+ * Two weights because role and scoring rate settle at different speeds — see
+ * MINUTES_PRIOR_MINUTES for why sharing one made rotated players project as
+ * starters.
+ */
+interface MinutesBasis {
+  minutes: number;
+  basis: DataBasis;
+  /** Weight on this season for rates, which settle slowly. */
+  weight: number;
+  /** Weight on this season for minutes, which settle fast. */
+  minutesWeight: number;
+}
+
 function baseMinutesPerMatch(
   player: FplElement,
   ctx: ProjectionContext,
-): { minutes: number; basis: DataBasis; weight: number } {
+): MinutesBasis {
   const past = ctx.lastSeasonByCode.get(player.code);
   const pastMinutes = past && past.minutes > 0 ? past.minutes / K.GAMES_IN_SEASON : null;
 
@@ -464,29 +503,48 @@ function baseMinutesPerMatch(
         minutes: clamp(player.minutes / K.GAMES_IN_SEASON, 0, 90),
         basis: "last_season",
         weight: 0,
+        minutesWeight: 0,
       };
     }
   } else if (player.minutes > 0 || pastMinutes !== null) {
     // Shrink this season toward last season by how much of it exists. One
     // match is evidence, but not thirty-eight matches' worth.
-    const current = player.minutes / ctx.completedGameweeks;
+    // Divide by what this club has played, not by finished gameweeks: a
+    // gameweek counts as finished only once every match in it is done.
+    const played =
+      ctx.matchesPlayedByTeam.get(player.team) ?? ctx.completedGameweeks;
+    const current = played > 0 ? player.minutes / played : 0;
+
+    // Two priors, because role and scoring rate settle at different speeds —
+    // and two different measures of evidence, which matters more.
+    //
+    // A rate can only be observed in minutes actually played, so its weight
+    // follows those. Whether a player features is observed every time the club
+    // plays, whether or not he gets on: a player with nothing in three matches
+    // has been passed over three times, and that is the evidence. Sizing the
+    // minutes weight by minutes played gave those players weight zero, so they
+    // inherited last season whole and a dropped defender projected as a nailed
+    // starter.
     const weight = player.minutes / (player.minutes + K.PRIOR_MINUTES);
+    const opportunity = played * 90;
+    const minutesWeight =
+      opportunity / (opportunity + K.MINUTES_PRIOR_MINUTES);
 
     const minutes =
       pastMinutes === null
         ? current
-        : weight * current + (1 - weight) * pastMinutes;
+        : minutesWeight * current + (1 - minutesWeight) * pastMinutes;
 
     const basis: DataBasis =
       pastMinutes === null
         ? "current_season"
-        : weight >= 0.5
+        : minutesWeight >= 0.5
           ? "current_season"
           : player.minutes === 0
             ? "last_season"
             : "blended";
 
-    return { minutes: clamp(minutes, 0, 90), basis, weight };
+    return { minutes: clamp(minutes, 0, 90), basis, weight, minutesWeight };
   }
 
   // No league history: price is the only signal that the club rates them.
@@ -495,7 +553,7 @@ function baseMinutesPerMatch(
   const minutes =
     K.NO_HISTORY_MIN_MINUTES +
     (K.NO_HISTORY_MAX_MINUTES - K.NO_HISTORY_MIN_MINUTES) * Math.pow(ratio, 1.5);
-  return { minutes, basis: "price_prior", weight: 0 };
+  return { minutes, basis: "price_prior", weight: 0, minutesWeight: 0 };
 }
 
 /**
@@ -508,7 +566,7 @@ function baseMinutesPerMatch(
 function attackingRates(
   player: FplElement,
   ctx: ProjectionContext,
-  base: { basis: DataBasis; weight: number },
+  base: MinutesBasis,
 ) {
   if (base.basis === "price_prior") {
     return {
@@ -537,7 +595,7 @@ function projectFixture(
   player: FplElement,
   fixture: FplFixture,
   ctx: ProjectionContext,
-  base: { minutes: number; basis: DataBasis; weight: number },
+  base: MinutesBasis,
   availability: number,
 ): FixtureProjection {
   const isHome = fixture.team_h === player.team;
@@ -642,7 +700,7 @@ function projectFixture(
 
 function assessConfidence(
   player: FplElement,
-  base: { minutes: number; basis: DataBasis; weight: number },
+  base: MinutesBasis,
   ctx: ProjectionContext,
 ): number {
   // Confidence follows the evidence actually behind the projection, which
@@ -676,7 +734,7 @@ function assessConfidence(
 
 function assessRisks(
   player: FplElement,
-  base: { minutes: number; basis: DataBasis; weight: number },
+  base: MinutesBasis,
   perFixture: FixtureProjection[],
   availability: number,
   depthFactor: number,
