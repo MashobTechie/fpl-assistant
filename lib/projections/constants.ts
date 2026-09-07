@@ -198,8 +198,13 @@ export const DISCIPLINE_PRIOR_MINUTES = 900;
 export const TEAM_DEFENCE_MIN = 0.65;
 export const TEAM_DEFENCE_MAX = 1.45;
 
-/** Minimum minutes before a player's xGC counts toward his club's average. */
-export const TEAM_DEFENCE_MIN_MINUTES = 450;
+/**
+ * Removed deliberately. Any fixed minutes threshold is wrong at one end of a
+ * season or the other: 450 emptied every cohort in the league three gameweeks
+ * in, which silently flattened all twenty club defence ratings to 1.00 and
+ * left the bonus curve with no points to fit. Use cohortThreshold() from
+ * ./priors, which scales with how much season exists.
+ */
 
 // -------------------------------------------------------------------- bonus
 
@@ -277,3 +282,15 @@ export const MINUTES_PRIOR_MINUTES = 90;
  * played this season.
  */
 export const PRIOR_CONFIDENCE_DISCOUNT = 0.5;
+
+/**
+ * Bounds on the club attack rating, and the fallback when a season has no
+ * expected goals yet.
+ *
+ * The same reasoning as the defence bounds: a rating derived from a handful of
+ * matches can reach absurd extremes, and no Premier League attack is really
+ * two and a half times the league average over five gameweeks.
+ */
+export const TEAM_ATTACK_MIN = 0.6;
+export const TEAM_ATTACK_MAX = 1.6;
+export const LEAGUE_GOALS_PER_MATCH_FALLBACK = 1.45;

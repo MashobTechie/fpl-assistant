@@ -143,6 +143,17 @@ export interface ProjectionContext {
    * conceded. Below 1 concedes less than average.
    */
   teamDefenceByTeam: Map<number, number>;
+  /**
+   * How each club's attack compares with the league, from the expected goals
+   * its players actually generate. Above 1 scores more than average.
+   *
+   * Replaces reading fixture difficulty off FPL's 1-5 scale, which is a
+   * subjective seeding of the opponent published before a ball is kicked. Two
+   * clubs rated 3 can differ by half a goal a game, and FDR cannot say so.
+   */
+  teamAttackByTeam: Map<number, number>;
+  /** League mean goals per team per match, the baseline both ratings scale. */
+  leagueGoalsPerMatch: number;
   /** Expected bonus per 90 as a function of BPS per 90, fitted from the season. */
   bonusCurve: { bps90: number; bonus90: number }[];
 }
@@ -421,7 +432,7 @@ export function buildContext(
   const teamXgc = new Map<number, number>();
   for (const t of bootstrap.teams) {
     const cohort = bootstrap.elements.filter(
-      (e) => e.team === t.id && e.minutes >= K.TEAM_DEFENCE_MIN_MINUTES,
+      (e) => e.team === t.id && e.minutes >= minCohortMinutes,
     );
     const minutes = cohort.reduce((sum, e) => sum + e.minutes, 0);
     if (minutes > 0) {
@@ -449,10 +460,46 @@ export function buildContext(
     );
   }
 
+  // How each club's attack compares with the league, from the expected goals
+  // its players generate rather than from FPL's fixture-difficulty rating.
+  //
+  // FDR is a subjective 1-5 seeding published before a ball is kicked and never
+  // revised. Two clubs both rated 3 can differ by half a goal a game, and the
+  // scale has no way to say so — every projection against them came out
+  // identical. Team xG per match is the same judgement made from what has
+  // actually happened, on a continuous scale.
+  const teamAttackByTeam = new Map<number, number>();
+  const teamXg = new Map<number, number>();
+  for (const t of bootstrap.teams) {
+    const squad = bootstrap.elements.filter((e) => e.team === t.id);
+    const played = matchesPlayedByTeam.get(t.id) ?? 0;
+    const goals = squad.reduce(
+      (sum, e) => sum + Number.parseFloat(String(e.expected_goals ?? "0")),
+      0,
+    );
+    if (played > 0 && goals > 0) teamXg.set(t.id, goals / played);
+  }
+
+  const xgValues = [...teamXg.values()];
+  const leagueGoalsPerMatch =
+    xgValues.length > 0
+      ? xgValues.reduce((a, b) => a + b, 0) / xgValues.length
+      : K.LEAGUE_GOALS_PER_MATCH_FALLBACK;
+
+  for (const t of bootstrap.teams) {
+    const own = teamXg.get(t.id);
+    teamAttackByTeam.set(
+      t.id,
+      own && leagueGoalsPerMatch > 0
+        ? clamp(own / leagueGoalsPerMatch, K.TEAM_ATTACK_MIN, K.TEAM_ATTACK_MAX)
+        : 1,
+    );
+  }
+
   // Expected bonus against BPS per 90, fitted from this season's players so it
   // tracks however BPS is actually converting into bonus.
   const bonusSamples = bootstrap.elements
-    .filter((e) => e.minutes >= K.TEAM_DEFENCE_MIN_MINUTES)
+    .filter((e) => e.minutes >= minCohortMinutes)
     .map((e) => ({
       bps90: (e.bps / e.minutes) * 90,
       bonus90: (e.bonus / e.minutes) * 90,
@@ -490,6 +537,8 @@ export function buildContext(
     savesPriorByPosition,
     recentMinutesByPlayer,
     teamDefenceByTeam,
+    teamAttackByTeam,
+    leagueGoalsPerMatch,
     bonusCurve,
   };
 
@@ -526,6 +575,8 @@ export function buildContext(
     savesPriorByPosition,
     recentMinutesByPlayer,
     teamDefenceByTeam,
+    teamAttackByTeam,
+    leagueGoalsPerMatch,
     bonusCurve,
   };
 }
@@ -709,9 +760,20 @@ function projectFixture(
   const difficulty = isHome ? fixture.team_h_difficulty : fixture.team_a_difficulty;
   const pos = player.element_type;
 
+  // Attack scaled by the two clubs' actual records rather than a 1-5 seeding:
+  // how much this side creates against how much the opponent concedes, both
+  // measured against the league. FDR remains the fallback for a fixture whose
+  // clubs have no rating yet, and is still shown in the UI because managers
+  // read it fluently.
+  const ownAttack = ctx.teamAttackByTeam.get(player.team) ?? 1;
+  const oppDefence = ctx.teamDefenceByTeam.get(opponentId) ?? 1;
+  const ratedAttack =
+    ctx.teamAttackByTeam.has(player.team) || ctx.teamDefenceByTeam.has(opponentId)
+      ? ownAttack * oppDefence
+      : (K.FDR_ATTACK_MULTIPLIER[difficulty] ?? 1);
+
   const attackMult =
-    (K.FDR_ATTACK_MULTIPLIER[difficulty] ?? 1) *
-    (isHome ? K.HOME_ATTACK_MULTIPLIER : K.AWAY_ATTACK_MULTIPLIER);
+    ratedAttack * (isHome ? K.HOME_ATTACK_MULTIPLIER : K.AWAY_ATTACK_MULTIPLIER);
   const defenceMult = isHome
     ? K.HOME_DEFENCE_MULTIPLIER
     : K.AWAY_DEFENCE_MULTIPLIER;
