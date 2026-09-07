@@ -230,7 +230,7 @@ export const BONUS_CURVE_BUCKETS = 12;
  *   1  first version
  *   2  club minutes constraint, discipline, team defence, BPS-based bonus
  */
-export const PROJECTION_ENGINE_VERSION = "4";
+export const PROJECTION_ENGINE_VERSION = "5";
 
 /**
  * How much current-season evidence it takes to half-outweigh last season.

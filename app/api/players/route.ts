@@ -5,6 +5,8 @@ import {
   getBootstrap,
   getFixtures,
   previousSeasonName,
+  getRecentMinutes,
+  recentWindow,
   resolveTargetGameweek,
 } from "@/lib/fpl/client";
 import { readPlayerHistory } from "@/lib/fpl/store";
@@ -24,7 +26,8 @@ async function buildPlayerList() {
     readPlayerHistory(previousSeasonName()),
   ]);
   const gameweek = resolveTargetGameweek(bootstrap);
-  const ctx = buildContext(bootstrap, fixtures, lastSeason);
+  const recent = await getRecentMinutes(recentWindow(bootstrap));
+  const ctx = buildContext(bootstrap, fixtures, lastSeason, recent);
 
   const players = bootstrap.elements
     .map((el) => {

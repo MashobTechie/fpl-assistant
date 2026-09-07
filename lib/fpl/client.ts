@@ -295,3 +295,44 @@ export function getEntryHistory(entryId: number): Promise<FplEntryHistory> {
     get<FplEntryHistory>(`/entry/${entryId}/history/`),
   );
 }
+
+/**
+ * Per-gameweek minutes for every player, across a window of finished weeks.
+ *
+ * One request per gameweek returns all 600-odd players, so a five-week window
+ * costs five calls rather than the six hundred that /element-summary/ would.
+ *
+ * Season totals cannot distinguish 90-90-0 from 60-60-60: both average 60. The
+ * first is a starter who was rested, the second a substitute who never starts,
+ * and they carry completely different risk. Keeping the per-week figures is
+ * what lets the projection model starting and appearing as probabilities
+ * rather than inferring them from an average.
+ */
+export async function getRecentMinutes(
+  gameweeks: number[],
+): Promise<Map<number, number[]>> {
+  const byPlayer = new Map<number, number[]>();
+  if (gameweeks.length === 0) return byPlayer;
+
+  const weeks = await Promise.all(
+    gameweeks.map((gw) => getLive(gw).catch(() => null)),
+  );
+
+  for (const week of weeks) {
+    if (!week) continue;
+    for (const el of week.elements) {
+      const runs = byPlayer.get(el.id) ?? [];
+      runs.push(el.stats.minutes ?? 0);
+      byPlayer.set(el.id, runs);
+    }
+  }
+  return byPlayer;
+}
+
+/** The finished gameweeks to read recent form from, most recent last. */
+export function recentWindow(bootstrap: FplBootstrap, size = 5): number[] {
+  return bootstrap.events
+    .filter((e) => e.finished)
+    .map((e) => e.id)
+    .slice(-size);
+}

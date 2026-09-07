@@ -8,6 +8,8 @@ import {
   getEntry,
   getFixtures,
   getPicks,
+  getRecentMinutes,
+  recentWindow,
   resolveTargetGameweek,
 } from "@/lib/fpl/client";
 import {
@@ -145,7 +147,11 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
 
   const gameweek = opts.gameweek ?? resolveTargetGameweek(bootstrap);
   const horizon = opts.horizon ?? DEFAULT_HORIZON;
-  const ctx = buildContext(bootstrap, fixtures, lastSeason);
+
+  // Needs the bootstrap first, to know which gameweeks have finished. One
+  // request per gameweek, all players, so a five-week window is five calls.
+  const recent = await getRecentMinutes(recentWindow(bootstrap));
+  const ctx = buildContext(bootstrap, fixtures, lastSeason, recent);
 
   const elementsById = new Map<number, FplElement>(
     bootstrap.elements.map((e) => [e.id, e]),

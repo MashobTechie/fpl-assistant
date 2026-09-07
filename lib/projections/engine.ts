@@ -26,6 +26,7 @@ import {
   shrinkRate,
   type Prior,
 } from "./priors";
+import { blendedMinutes, minutesProfile } from "./minutes";
 
 export interface PointsBreakdown {
   appearance: number;
@@ -129,6 +130,14 @@ export interface ProjectionContext {
   defconPriorByPosition: Record<ElementTypeId, Prior | null>;
   /** Saves per 90 for keepers — the fifth rate that was never shrunk. */
   savesPriorByPosition: Record<ElementTypeId, Prior | null>;
+  /**
+   * Minutes played in each recent gameweek, by player.
+   *
+   * Lets starting and appearing be observed as frequencies rather than guessed
+   * from an average — 90-90-0 and 60-60-60 both average 60 and are completely
+   * different players.
+   */
+  recentMinutesByPlayer: Map<number, number[]>;
   /**
    * How a club's defence compares with the league, from expected goals
    * conceded. Below 1 concedes less than average.
@@ -326,6 +335,8 @@ export function buildContext(
    * database, keep working — they simply lose the shrinkage.
    */
   lastSeasonByCode: Map<number, PastSeasonTotals> = new Map(),
+  /** Per-gameweek minutes over a recent window. Optional: the CLI has none. */
+  recentMinutesByPlayer: Map<number, number[]> = new Map(),
 ): ProjectionContext {
   const completedGameweeks = bootstrap.events.filter((e) => e.finished).length;
 
@@ -477,6 +488,7 @@ export function buildContext(
     disciplinePriorByPosition,
     defconPriorByPosition,
     savesPriorByPosition,
+    recentMinutesByPlayer,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -512,6 +524,7 @@ export function buildContext(
     disciplinePriorByPosition,
     defconPriorByPosition,
     savesPriorByPosition,
+    recentMinutesByPlayer,
     teamDefenceByTeam,
     bonusCurve,
   };
@@ -703,12 +716,22 @@ function projectFixture(
     ? K.HOME_DEFENCE_MULTIPLIER
     : K.AWAY_DEFENCE_MULTIPLIER;
 
-  const expectedMinutes = base.minutes * availability;
+  // Observed frequencies where a recent window exists, and the old linear
+  // shapes where it does not. FPL pays appearance points and clean sheets on
+  // the sixty-minute threshold, so how often a player crosses it matters more
+  // than what he averages — and an average cannot tell 90-90-0 from 60-60-60.
+  const profile = ctx.recentMinutesByPlayer.has(player.id)
+    ? minutesProfile(ctx.recentMinutesByPlayer.get(player.id), base.minutes)
+    : null;
+
+  const expectedMinutes = blendedMinutes(profile, base.minutes) * availability;
   const minutesShare = expectedMinutes / 90;
 
-  // Probability of appearing at all, and of reaching the 60-minute threshold.
-  const pAppear = clamp(base.minutes / 25, 0, 0.98) * availability;
-  const pSixty = clamp((base.minutes - 15) / 65, 0, 0.95) * availability;
+  const pAppear =
+    (profile ? profile.pAppear : clamp(base.minutes / 25, 0, 0.98)) * availability;
+  const pSixty =
+    (profile ? profile.pSixty : clamp((base.minutes - 15) / 65, 0, 0.95)) *
+    availability;
 
   const { xg90, xa90 } = attackingRates(player, ctx, base);
 
