@@ -259,11 +259,26 @@ export function transferBudget(
     return { free: gameweek <= 1 ? 15 : 1, inferred: true, hitCost: TRANSFER_HIT_COST };
   }
 
+  // Gameweeks where the allowance was suspended rather than spent.
+  const chipWeeks = new Set(
+    (history.chips ?? [])
+      .filter((c) => c.name === "wildcard" || c.name === "freehit")
+      .map((c) => c.event),
+  );
+
+  // Seeded at one for gameweek 2, and gameweek 1 is skipped rather than
+  // counted. Before the first deadline transfers are unlimited, and that
+  // allowance banks nothing — folding it into the accumulation granted an
+  // extra free transfer that lasted all season.
   let free = 1;
   for (const week of [...history.current].sort((a, b) => a.event - b.event)) {
+    if (week.event < 2) continue;
     if (week.event >= gameweek) break;
-    // A wildcard or free hit week does not consume the standing allowance.
-    free = Math.min(MAX_BANKED_TRANSFERS, Math.max(0, free - week.event_transfers) + 1);
+
+    // A wildcard or free hit makes that week's transfers free and unlimited,
+    // and leaves whatever was banked untouched.
+    const spent = chipWeeks.has(week.event) ? 0 : week.event_transfers;
+    free = Math.min(MAX_BANKED_TRANSFERS, Math.max(0, free - spent) + 1);
   }
 
   return { free, inferred: true, hitCost: TRANSFER_HIT_COST };
