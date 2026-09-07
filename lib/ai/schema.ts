@@ -74,7 +74,24 @@ export const TransferIdeaSchema = z.object({
   inPlayerId: z.number(),
   inName: z.string(),
   horizon: z.enum(["short_term", "medium_term"]),
-  reasoning: z.string(),
+  /**
+   * The reason, for someone who has never played FPL.
+   *
+   * The house style is deliberately FPL-native — differential, nailed, fixture
+   * swing — which is right for the analysis and wrong for the one line that has
+   * to carry a decision. A manager reads "enabler with a fixture swing" and
+   * either already knew, or learns nothing.
+   */
+  plainReason: z
+    .string()
+    .describe(
+      "One sentence a person who has never played fantasy football would understand. No FPL jargon at all: no differential, nailed, enabler, fixture swing, ceiling, floor, haul, or xG. Say who is playing badly or well, or who has easy or hard games coming, in ordinary words.",
+    ),
+  reasoning: z
+    .string()
+    .describe(
+      "The analytical case, in FPL-native language, for a manager who wants the detail behind plainReason.",
+    ),
   funding: z
     .string()
     .describe(

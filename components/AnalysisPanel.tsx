@@ -186,7 +186,25 @@ export function AnalysisPanel({
                     {t.horizon === "short_term" ? "1–3 GW" : "5–10 GW"}
                   </span>
                 </div>
-                <p className="mt-1.5 text-[--color-ink-muted]">{t.reasoning}</p>
+                {/* Plain first and at full weight: it is the sentence that
+                    carries the decision. The analytical version sits under it
+                    for anyone who wants the working, rather than competing
+                    with it for the same reader. Older stored analyses predate
+                    plainReason, so fall back rather than render a gap. */}
+                <p className="mt-2 leading-relaxed text-[--color-ink]">
+                  {t.plainReason ?? t.reasoning}
+                </p>
+                {t.plainReason && (
+                  <details className="group mt-2">
+                    <summary className="cursor-pointer list-none text-xs font-medium text-[--color-cyan] hover:underline">
+                      <span className="group-open:hidden">Why, in FPL terms</span>
+                      <span className="hidden group-open:inline">Hide the detail</span>
+                    </summary>
+                    <p className="mt-1.5 text-xs leading-relaxed text-[--color-ink-muted]">
+                      {t.reasoning}
+                    </p>
+                  </details>
+                )}
                 <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                   <div className="flex gap-1.5">
                     <dt className="eyebrow text-[9px] text-[--color-ink-faint]">Funding</dt>
