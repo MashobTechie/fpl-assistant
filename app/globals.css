@@ -30,6 +30,13 @@
   --color-accent-dim: #00cc6c;
   --color-accent-deep: #007a41;
 
+  /* Chart marks. Height carries the value, so colour only marks the peak —
+     encoding magnitude twice would be redundant. Both steps validated at 3:1
+     or better against --color-surface; pure mint (#00ff87) glares on dark
+     purple at L 0.876, so the peak is toned down slightly. */
+  --color-mark: #2f8f63;
+  --color-mark-peak: #00e87b;
+
   /* Information, links, secondary emphasis. */
   --color-cyan: #04f5ff;
   --color-cyan-dim: #00c2cc;

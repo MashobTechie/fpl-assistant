@@ -8,6 +8,7 @@ import type {
   ProjectionsResponse,
 } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
+import { ChipPanel } from "./ChipPanel";
 import { LineupTable } from "./LineupTable";
 import { ReviewPanel } from "./ReviewPanel";
 import { PitchView } from "./PitchView";
@@ -343,6 +344,17 @@ export function DashboardClient({
             />
           )}
         </Card>
+      )}
+
+      {/* Chips sit under the lineup: you read what you have, then decide what
+          to spend on it. The review goes below both — it is context, not a
+          decision. */}
+      {projections && (
+        <ChipPanel
+          chips={projections.chips}
+          transfers={projections.transfers}
+          gameweek={projections.gameweek}
+        />
       )}
 
       {projections?.review && <ReviewPanel review={projections.review} />}
