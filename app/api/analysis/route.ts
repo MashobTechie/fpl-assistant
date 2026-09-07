@@ -101,6 +101,7 @@ export async function POST(request: Request) {
       horizon: resolved.horizon,
       managerName: resolved.managerName,
       teamName: resolved.teamName,
+      matchesPlayed: resolved.matchesPlayed,
       economics: resolved.economics,
       unaffordableTargets: resolved.unaffordableTargets,
       transfers: resolved.transfers,

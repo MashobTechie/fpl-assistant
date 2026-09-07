@@ -68,6 +68,12 @@ export interface ResolvedSquad {
   transferTargets: FundedTarget[];
   /** Legal swaps, ranked by what they earn across the whole horizon. */
   transferCandidates: TransferCandidate[];
+  /**
+   * Matches the typical club has completed. The analyst needs this to know
+   * what "this season's numbers" is actually worth — three matches and thirty
+   * are the same dataBasis label and wildly different evidence.
+   */
+  matchesPlayed: number;
   /** Bank, squad value, selling prices and club counts. */
   economics: SquadEconomics;
   /** Targets dropped because nothing in the squad could fund them. */
@@ -287,8 +293,16 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     horizon,
   );
 
+  // The modal club, not the maximum: postponements leave one or two clubs
+  // behind, and the median is what most of the squad has actually played.
+  const played = [...ctx.matchesPlayedByTeam.values()].sort((a, b) => a - b);
+  const matchesPlayed = played.length
+    ? played[Math.floor(played.length / 2)]
+    : ctx.completedGameweeks;
+
   return {
     gameweek,
+    matchesPlayed,
     horizon,
     transfers: transferBudget(history, gameweek),
     chips: valueChips(optimal, squad, gameweek, history, horizon),

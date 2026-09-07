@@ -91,6 +91,7 @@ async function main() {
     horizon: resolved.horizon,
     managerName: resolved.managerName,
     teamName: resolved.teamName,
+    matchesPlayed: resolved.matchesPlayed,
     economics: resolved.economics,
     unaffordableTargets: resolved.unaffordableTargets,
     transfers: resolved.transfers,
