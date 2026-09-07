@@ -59,5 +59,10 @@ export async function POST(request: Request) {
     review: resolved.review,
     chips: resolved.chips,
     transfers: resolved.transfers,
+    // Both computed on every request and previously visible only to the
+    // analyst, so the one way to read your own plan was to pay for an LLM call
+    // describing it back to you.
+    plan: resolved.plan,
+    captaincy: resolved.captaincy,
   });
 }

@@ -8,8 +8,10 @@ import type {
   ProjectionsResponse,
 } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
+import { CaptaincyPanel } from "./CaptaincyPanel";
 import { ChipPanel } from "./ChipPanel";
 import { LineupTable } from "./LineupTable";
+import { PlanPanel } from "./PlanPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { PitchView } from "./PitchView";
 import { SquadBuilder } from "./SquadBuilder";
@@ -346,9 +348,17 @@ export function DashboardClient({
         </Card>
       )}
 
-      {/* Chips sit under the lineup: you read what you have, then decide what
-          to spend on it. The review goes below both — it is context, not a
-          decision. */}
+      {projections && projections.captaincy.length > 0 && (
+        <CaptaincyPanel
+          candidates={projections.captaincy}
+          gameweek={projections.gameweek}
+        />
+      )}
+
+      {projections && <PlanPanel plan={projections.plan} />}
+
+      {/* Order is this week, then the horizon, then what already happened:
+          captaincy and the plan are decisions, the review is context. */}
       {projections && (
         <ChipPanel
           chips={projections.chips}

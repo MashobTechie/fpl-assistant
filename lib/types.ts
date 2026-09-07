@@ -3,6 +3,8 @@
 import type { GameweekAnalysis } from "@/lib/ai/schema";
 import type { PlayerProjection } from "@/lib/projections/engine";
 import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
+import type { CaptaincyCandidate } from "@/lib/squad/optimizer";
+import type { TransferPlan } from "@/lib/squad/planner";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
 import type { GameweekReview } from "@/lib/squad/review";
 
@@ -56,6 +58,10 @@ export interface ProjectionsResponse {
   review: GameweekReview | null;
   chips: ChipValuation[];
   transfers: TransferBudget;
+  /** The best multi-week sequence found, against leaving the squad alone. */
+  plan: TransferPlan;
+  /** Captaincy shortlist with each candidate's simulated distribution. */
+  captaincy: CaptaincyCandidate[];
 }
 
 export interface AnalysisResponse {
