@@ -38,17 +38,37 @@ function Shirt({ team, flagged }: { team: string; flagged: boolean }) {
   );
 }
 
+/**
+ * Transfer editing, when the pitch is being used to try moves.
+ *
+ * Kept on the pitch rather than in a separate table because that is where a
+ * manager already thinks about their team — "who in my defence goes?" is a
+ * question about shape, and answering it in a list loses the shape.
+ */
+export interface PitchEditing {
+  /** Players already marked for sale, keyed to their chosen replacement. */
+  sold: Map<number, { name: string; team: string; price: number } | null>;
+  onSell: (player: PlayerProjection) => void;
+  onReplace: (player: PlayerProjection) => void;
+  onUndo: (player: PlayerProjection) => void;
+}
+
 function PlayerChip({
   player,
   captainId,
   viceId,
   gameweek,
+  editing,
 }: {
   player: PlayerProjection;
   captainId?: number;
   viceId?: number;
   gameweek: number;
+  editing?: PitchEditing;
 }) {
+  if (editing?.sold.has(player.playerId)) {
+    return <SoldSlot player={player} editing={editing} />;
+  }
   const armband =
     player.playerId === captainId ? "C" : player.playerId === viceId ? "V" : null;
   const next = player.perFixture.find((f) => f.gameweek === gameweek) ?? player.perFixture[0];
@@ -58,6 +78,17 @@ function PlayerChip({
     <div className="flex w-[4.6rem] flex-col items-center gap-1 sm:w-[5.4rem]">
       <div className="relative">
         <Shirt team={player.team} flagged={player.status !== "a"} />
+        {editing && (
+          <button
+            type="button"
+            onClick={() => editing.onSell(player)}
+            title={`Sell ${player.webName}`}
+            aria-label={`Sell ${player.webName}`}
+            className="absolute -right-2 -top-1.5 flex h-[19px] w-[19px] items-center justify-center rounded-full bg-[--color-pink] text-[11px] font-bold leading-none text-white shadow ring-2 ring-[--color-base] transition hover:scale-110"
+          >
+            ×
+          </button>
+        )}
         {armband && (
           <span
             title={armband === "C" ? "Captain" : "Vice-captain"}
@@ -97,6 +128,65 @@ function PlayerChip({
   );
 }
 
+/**
+ * A shirt that has been sold. Before a replacement is picked it is an empty
+ * slot asking for one — the position is kept, because a transfer has to be
+ * like for like and the slot is the clearest way to say so.
+ */
+function SoldSlot({
+  player,
+  editing,
+}: {
+  player: PlayerProjection;
+  editing: PitchEditing;
+}) {
+  const incoming = editing.sold.get(player.playerId) ?? null;
+  return (
+    <div className="flex w-[4.6rem] flex-col items-center gap-1 sm:w-[5.4rem]">
+      <div className="relative">
+        {incoming ? (
+          <Shirt team={incoming.team} flagged={false} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => editing.onReplace(player)}
+            aria-label={`Pick a ${player.position} to replace ${player.webName}`}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-dashed border-white/70 bg-black/25 text-lg font-bold text-white transition hover:border-[--color-accent] hover:text-[--color-accent]"
+          >
+            +
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => editing.onUndo(player)}
+          title={`Keep ${player.webName}`}
+          aria-label={`Undo — keep ${player.webName}`}
+          className="absolute -right-2 -top-1.5 flex h-[19px] w-[19px] items-center justify-center rounded-full bg-[--color-base] text-[11px] font-bold leading-none text-[--color-ink] ring-2 ring-[--color-border-bright] transition hover:scale-110"
+        >
+          ↺
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => editing.onReplace(player)}
+        className="w-full overflow-hidden rounded-[5px] bg-[--color-base]/85 text-center backdrop-blur-sm transition hover:ring-1 hover:ring-[--color-accent]"
+      >
+        <div className="truncate px-1 py-[3px] text-[11px] font-semibold leading-tight text-white">
+          {incoming ? incoming.name : `Pick ${player.position}`}
+        </div>
+        <div className="truncate bg-[--color-pink]/80 px-1 py-[2px] text-[10px] font-semibold leading-tight text-white">
+          out: {player.webName}
+        </div>
+      </button>
+
+      <div className="numeric text-[12px] font-bold leading-none text-[--color-cyan]">
+        {incoming ? `£${incoming.price.toFixed(1)}m` : "—"}
+      </div>
+    </div>
+  );
+}
+
 function Row({
   players,
   ...rest
@@ -105,6 +195,7 @@ function Row({
   captainId?: number;
   viceId?: number;
   gameweek: number;
+  editing?: PitchEditing;
 }) {
   if (players.length === 0) return null;
   return (
@@ -124,6 +215,7 @@ export function PitchView({
   expectedPoints,
   captainId,
   viceId,
+  editing,
 }: {
   startingXI: PlayerProjection[];
   bench: PlayerProjection[];
@@ -132,10 +224,12 @@ export function PitchView({
   expectedPoints: number;
   captainId?: number;
   viceId?: number;
+  /** When set, every shirt can be sold and every sold slot replaced. */
+  editing?: PitchEditing;
 }) {
   const byPosition = (pos: PlayerProjection["position"]) =>
     startingXI.filter((p) => p.position === pos);
-  const shared = { captainId, viceId, gameweek };
+  const shared = { captainId, viceId, gameweek, editing };
 
   return (
     <div className="flex flex-col gap-3">

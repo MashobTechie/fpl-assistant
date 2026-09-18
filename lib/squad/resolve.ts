@@ -39,6 +39,14 @@ import {
   type CaptaincyCandidate,
   type OptimisedSquad,
 } from "./optimizer";
+import {
+  applyDraft,
+  compareDraft,
+  DraftError,
+  type DraftComparison,
+  type DraftMove,
+  type DraftTransfer,
+} from "./draft";
 import { planTransfers, type TransferPlan } from "./planner";
 import { rankTransfers, type TransferCandidate } from "./transfers";
 import {
@@ -57,6 +65,7 @@ export class SquadResolutionError extends Error {
       | "unknown_entry"
       | "picks_unavailable"
       | "invalid_squad"
+      | "invalid_draft"
       | "unknown_player",
   ) {
     super(message);
@@ -88,6 +97,18 @@ export interface ResolvedSquad {
   matchesPlayed: number;
   /** Bank, squad value, selling prices and club counts. */
   economics: SquadEconomics;
+  /**
+   * The manager's proposed transfers, if this squad is a draft: what moved,
+   * what it cost in hits, and how it compares with doing nothing.
+   */
+  draft: {
+    moves: DraftMove[];
+    freeTransfers: number;
+    hitCost: number;
+    bankAfter: number;
+    comparison: DraftComparison;
+    baselineIds: number[];
+  } | null;
   /** Targets dropped because nothing in the squad could fund them. */
   unaffordableTargets: number;
   /** Free transfers available, and what a further one costs. */
@@ -144,6 +165,11 @@ interface ResolveOptions {
   /** Manual squad: exactly 15 FPL element ids. Overrides the FPL import. */
   playerIds?: number[];
   entryId?: number;
+  /**
+   * Swaps to try on an imported squad before making them in FPL. Applied
+   * against the squad's real selling prices and bank, never a fresh £100m.
+   */
+  transfers?: DraftTransfer[];
 }
 
 export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad> {
@@ -174,6 +200,17 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let squadValue: number | null = null;
   let manual = false;
   const sellPrices: Record<number, number> = {};
+  let baselineIds: number[] | null = null;
+  let draftMoves: DraftMove[] = [];
+
+  if (opts.transfers?.length && !opts.entryId) {
+    // A manual squad has no FPL position to transfer from — its picks are
+    // simply edited, and priced against the £100m budget like any other.
+    throw new SquadResolutionError(
+      "Transfers can only be tried on a squad imported from FPL.",
+      "invalid_draft",
+    );
+  }
 
   if (opts.playerIds?.length) {
     const problems = validateSquadIds(opts.playerIds);
@@ -224,6 +261,39 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
         sellPrices[pick.element] = pick.selling_price / 10;
       }
     }
+
+    if (opts.transfers?.length) {
+      // Transfers only mean anything for a deadline that has not passed.
+      const next = resolveTargetGameweek(bootstrap);
+      if (gameweek !== next) {
+        throw new SquadResolutionError(
+          `Gameweek ${gameweek} is already locked. Transfers can only be planned for gameweek ${next}.`,
+          "invalid_draft",
+        );
+      }
+      baselineIds = playerIds;
+      const teams = new Map(bootstrap.teams.map((t) => [t.id, t.short_name]));
+      try {
+        const applied = applyDraft(
+          playerIds,
+          opts.transfers,
+          elementsById,
+          (id) => teams.get(id) ?? "???",
+          sellPrices,
+          bank,
+        );
+        playerIds = applied.playerIds;
+        bank = applied.bank;
+        draftMoves = applied.moves;
+        for (const k of Object.keys(sellPrices)) delete sellPrices[Number(k)];
+        Object.assign(sellPrices, applied.sellPrices);
+      } catch (err) {
+        if (err instanceof DraftError) {
+          throw new SquadResolutionError(err.message, "invalid_draft");
+        }
+        throw err;
+      }
+    }
   } else {
     throw new SquadResolutionError(
       "Provide either an FPL team ID or a manual squad.",
@@ -242,8 +312,9 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     return projectPlayer(element, ctx, gameweek, horizon);
   });
 
-  // Only reachable for a manual squad: an imported one is legal by
-  // construction, having been built inside FPL's own rules.
+  // An imported squad is legal by construction, having been built inside
+  // FPL's own rules — but a draft of it is not, so the same check runs on both.
+  // This is where a draft that would put four players from one club is caught.
   const problems = validateSquadComposition(squad, { enforceBudget: manual });
   if (problems.length > 0) {
     throw new SquadResolutionError(problems.join(" "), "invalid_squad");
@@ -303,6 +374,27 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
 
   const budget = transferBudget(history, gameweek);
 
+  let draft: ResolvedSquad["draft"] = null;
+  let freeForPlan = budget.free;
+  if (baselineIds && draftMoves.length > 0) {
+    const hitCost =
+      Math.max(0, draftMoves.length - budget.free) * budget.hitCost;
+    const baseline = baselineIds.map((id) =>
+      projectPlayer(elementsById.get(id)!, ctx, gameweek, horizon),
+    );
+    draft = {
+      moves: draftMoves,
+      freeTransfers: budget.free,
+      hitCost,
+      bankAfter: bank ?? 0,
+      comparison: compareDraft(baseline, squad, gameweek, horizon, hitCost),
+      baselineIds,
+    };
+    // The draft has spent this week's allowance, so the plan starts from
+    // whatever is left rather than planning with transfers already used.
+    freeForPlan = Math.max(0, budget.free - draftMoves.length);
+  }
+
   const transferCandidates = rankTransfers(
     squad,
     affordable.map((t) => t.player),
@@ -339,11 +431,12 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
       transferCandidates,
       new Map(allProjections.map((p) => [p.playerId, p])),
       economics,
-      budget.free,
+      freeForPlan,
       gameweek,
       horizon,
     ),
     economics,
+    draft,
     unaffordableTargets: unaffordable,
     playerIds,
   };

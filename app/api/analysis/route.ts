@@ -37,9 +37,15 @@ export async function POST(request: Request) {
   if ("response" in result) return result.response;
   const { resolved } = result;
 
-  const stored = await persistSquad(supabase, user.id, resolved, body.entryId);
-  if ("response" in stored) return stored.response;
-  const squadRow = { id: stored.squadId };
+  // A draft is not saved as the manager's squad — that would overwrite the
+  // real one with moves they have not made. Its analysis is still cached,
+  // just without a squad row to hang from.
+  let squadRow: { id: string | null } = { id: null };
+  if (!resolved.draft) {
+    const stored = await persistSquad(supabase, user.id, resolved, body.entryId);
+    if ("response" in stored) return stored.response;
+    squadRow = { id: stored.squadId };
+  }
 
   // ---- Reuse a cached analysis unless asked not to -----------------------
   // An LLM call per dashboard refresh would make the product expensive for no
@@ -47,7 +53,12 @@ export async function POST(request: Request) {
   // Keyed on the picks themselves. squads carries unique (user_id, gameweek),
   // so a squad changed before the deadline keeps its row id — keying on
   // squad_id would hand back the previous squad's reasoning as `cached: true`.
-  const hash = squadHash(resolved.playerIds);
+  // A draft's verdict depends on the hit it takes, not just where it ends up,
+  // and it is framed as a proposal — so it must never be served back as the
+  // analysis of a real squad that happens to have the same fifteen.
+  const hash = resolved.draft
+    ? `${squadHash(resolved.playerIds)}-draft-${resolved.draft.hitCost}`
+    : squadHash(resolved.playerIds);
 
   if (!body.refresh) {
     const { data: cached } = await supabase
@@ -112,6 +123,7 @@ export async function POST(request: Request) {
       transferCandidates: resolved.transferCandidates,
       captaincy: resolved.captaincy,
       plan: resolved.plan,
+      draft: resolved.draft,
     });
   } catch (err) {
     await releaseAnalysis(supabase);

@@ -37,13 +37,17 @@ export async function POST(request: Request) {
   if ("response" in result) return result.response;
   const { resolved } = result;
 
-  const stored = await persistSquad(
-    supabase,
-    auth.user.id,
-    resolved,
-    parsed.body.entryId,
-  );
-  if ("response" in stored) return stored.response;
+  // A draft is a question, not a squad. Saving it would overwrite the real
+  // one, so the next page load would restore moves the manager never made.
+  if (!resolved.draft) {
+    const stored = await persistSquad(
+      supabase,
+      auth.user.id,
+      resolved,
+      parsed.body.entryId,
+    );
+    if ("response" in stored) return stored.response;
+  }
 
   return NextResponse.json({
     gameweek: resolved.gameweek,
@@ -64,5 +68,9 @@ export async function POST(request: Request) {
     // describing it back to you.
     plan: resolved.plan,
     captaincy: resolved.captaincy,
+    draft: resolved.draft,
+    // Bank and selling prices, so the transfer sandbox can say "you can't
+    // afford that" as you pick, rather than only after asking the server.
+    economics: resolved.economics,
   });
 }

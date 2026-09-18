@@ -102,6 +102,7 @@ async function main() {
     transferCandidates: resolved.transferCandidates,
       captaincy: resolved.captaincy,
       plan: resolved.plan,
+      draft: resolved.draft,
   });
 
   const chars = ANALYST_SYSTEM_PROMPT.length + prompt.length;

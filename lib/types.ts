@@ -5,7 +5,9 @@ import type { PlayerProjection } from "@/lib/projections/engine";
 import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
 import type { CaptaincyCandidate } from "@/lib/squad/optimizer";
 import type { TransferPlan } from "@/lib/squad/planner";
+import type { SquadEconomics } from "@/lib/squad/economics";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
+import type { ResolvedSquad } from "@/lib/squad/resolve";
 import type { GameweekReview } from "@/lib/squad/review";
 
 export interface PlayerListItem {
@@ -62,6 +64,10 @@ export interface ProjectionsResponse {
   plan: TransferPlan;
   /** Captaincy shortlist with each candidate's simulated distribution. */
   captaincy: CaptaincyCandidate[];
+  /** Bank, selling prices and club counts — what the sandbox prices moves with. */
+  economics: SquadEconomics;
+  /** Present when this squad is a draft of proposed transfers. */
+  draft: ResolvedSquad["draft"];
 }
 
 export interface AnalysisResponse {

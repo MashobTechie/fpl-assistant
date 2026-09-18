@@ -13,7 +13,9 @@ import { ChipPanel } from "./ChipPanel";
 import { LineupTable } from "./LineupTable";
 import { PlanPanel } from "./PlanPanel";
 import { ReviewPanel } from "./ReviewPanel";
+import { DraftVerdict } from "./DraftVerdict";
 import { PitchView } from "./PitchView";
+import { TransferSandbox, type Incoming } from "./TransferSandbox";
 import { SquadBuilder } from "./SquadBuilder";
 import { Button, Card, SectionHeading, SegmentedControl, StatTile } from "./ui";
 
@@ -61,6 +63,15 @@ export function DashboardClient({
   const [gameweek, setGameweek] = useState<number | null>(nextGameweek);
 
   const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
+  // ---- Transfer drafts ----------------------------------------------------
+  // The real squad is kept aside while a draft is on screen, so "back to my
+  // squad" is instant and never re-fetches, and nothing about a draft is saved.
+  const [sandbox, setSandbox] = useState(false);
+  const [baseline, setBaseline] = useState<ProjectionsResponse | null>(null);
+  const [draftMoves, setDraftMoves] = useState<{ out: number; in: number }[] | null>(null);
+  const [checkingDraft, setCheckingDraft] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [sandboxSeed, setSandboxSeed] = useState<Map<number, Incoming> | undefined>();
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -133,14 +144,96 @@ export function DashboardClient({
     setGameweek(gw);
     setAnalysis(null);
     setAnalysisError(null);
-    const picks =
-      projections?.squad.map((p) => p.playerId) ?? savedPicks ?? null;
-    if (!picks) return;
+    // A draft belongs to one deadline; switching gameweek drops it.
+    const real = baseline ?? projections;
+    if (baseline) setProjections(baseline);
+    setBaseline(null);
+    setDraftMoves(null);
+    setSandbox(false);
+
+    // An imported squad is re-requested by its FPL ID. Sending its picks as a
+    // manual squad priced it against £100m at today's prices — rejecting any
+    // squad that had risen in value — and dropped the review, chips and free
+    // transfers, which all need the ID.
+    const body: Record<string, unknown> | null =
+      mode === "import" && entryId
+        ? { entryId: Number(entryId) }
+        : (() => {
+            const picks = real?.squad.map((p) => p.playerId) ?? savedPicks ?? null;
+            return picks ? { playerIds: picks } : null;
+          })();
+    if (!body) return;
     setPending(true);
-    void runProjections({ playerIds: picks }, gw).finally(() =>
-      setPending(false),
-    );
+    void runProjections(body, gw).finally(() => setPending(false));
   }
+
+  /**
+   * Ask the server whether a draft can really be made, and what it is worth.
+   *
+   * The sandbox's own running total is an estimate; this is the authority. On
+   * success the draft replaces the squad on screen — so the pitch, captaincy
+   * and plan all describe the team you would have — and the analyst is asked
+   * straight away, because a verdict is what the button promised.
+   */
+  async function checkDraft(transfers: { out: number; in: number }[]) {
+    if (!entryId) return;
+    setCheckingDraft(true);
+    setDraftError(null);
+    try {
+      const body = {
+        entryId: Number(entryId),
+        transfers,
+        ...(gameweek !== null ? { gameweek } : {}),
+      };
+      const res = await fetch("/api/projections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDraftError(data.error ?? "That draft could not be checked.");
+        return;
+      }
+      setBaseline((b) => b ?? projections);
+      setProjections(data as ProjectionsResponse);
+      setDraftMoves(transfers);
+      setSandbox(false);
+      setAnalysis(null);
+      setAnalysisError(null);
+      void runAnalysis({ entryId: Number(entryId), transfers });
+    } catch {
+      setDraftError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setCheckingDraft(false);
+    }
+  }
+
+  function leaveDraft() {
+    if (baseline) setProjections(baseline);
+    setBaseline(null);
+    setDraftMoves(null);
+    setAnalysis(null);
+    setAnalysisError(null);
+    setDraftError(null);
+  }
+
+  function editDraft() {
+    const d = projections?.draft;
+    setSandboxSeed(
+      d
+        ? new Map(
+            d.moves.map((m) => [
+              m.out.playerId,
+              { id: m.in.playerId, name: m.in.name, team: m.in.team, cost: m.in.price },
+            ]),
+          )
+        : undefined,
+    );
+    leaveDraft();
+    setSandbox(true);
+  }
+
 
   /** Phase two on its own, so a restored squad can ask for an analysis. */
   async function runAnalysis(body: Record<string, unknown>) {
@@ -168,6 +261,11 @@ export function DashboardClient({
   }
 
   async function run(body: Record<string, unknown>) {
+    // A fresh import or build replaces everything, drafts included.
+    setBaseline(null);
+    setDraftMoves(null);
+    setSandbox(false);
+    setDraftError(null);
     setPending(true);
     setError(null);
     setAnalysisError(null);
@@ -306,15 +404,62 @@ export function DashboardClient({
         </div>
       )}
 
-      {projections && (
+      {projections?.draft && (
+        <DraftVerdict
+          draft={projections.draft}
+          horizon={projections.horizon}
+          onBack={leaveDraft}
+          onEdit={editDraft}
+        />
+      )}
+
+      {projections && sandbox && (
+        <Card accent className="p-4 sm:p-6">
+          <SectionHeading hint={`GW${projections.gameweek} deadline`}>
+            Try transfers
+          </SectionHeading>
+          <TransferSandbox
+            projections={projections}
+            checking={checkingDraft}
+            error={draftError}
+            onCheck={(t) => void checkDraft(t)}
+            onClose={() => {
+              setSandbox(false);
+              setDraftError(null);
+              setSandboxSeed(undefined);
+            }}
+            initialMoves={sandboxSeed}
+          />
+        </Card>
+      )}
+
+      {projections && !sandbox && (
         <Card className="p-4 sm:p-6">
           <SectionHeading
             hint={`${projections.optimal.formationLabel} · ${projections.optimal.expectedPoints.toFixed(1)} xPts`}
           >
-            Projected lineup
+            {projections.draft ? "Lineup with your draft" : "Projected lineup"}
           </SectionHeading>
 
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* Transfers can only be tried on an imported squad — that is the
+                only one with a real bank and selling prices to check against —
+                and only for a deadline that has not passed. */}
+            {mode === "import" &&
+              entryId &&
+              !projections.draft &&
+              (liveGameweek === null || gameweek !== liveGameweek) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSandboxSeed(undefined);
+                    setSandbox(true);
+                  }}
+                  className="order-last rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 sm:order-none"
+                >
+                  Try transfers
+                </button>
+              )}
             <SegmentedControl
               value={view}
               onChange={setView}
@@ -422,7 +567,12 @@ export function DashboardClient({
             onClick={() =>
               void runAnalysis({
                 ...(mode === "import" && entryId
-                  ? { entryId: Number(entryId) }
+                  ? {
+                      entryId: Number(entryId),
+                      // A draft is re-analysed as a draft, not as the squad
+                      // it replaced.
+                      ...(draftMoves ? { transfers: draftMoves } : {}),
+                    }
                   : { playerIds: projections.squad.map((p) => p.playerId) }),
                 // Force a fresh call only when something is already on screen.
                 // Otherwise the cache is exactly what we want to hit, for free.

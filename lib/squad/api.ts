@@ -33,6 +33,16 @@ export const SquadRequestSchema = z
     horizon: z.number().int().min(1).max(10).default(5),
     /** Bypass the cached analysis and pay for a fresh one. Analysis only. */
     refresh: z.boolean().default(false),
+    /** Swaps to try on an imported squad before making them in FPL. */
+    transfers: z
+      .array(
+        z.object({
+          out: z.number().int().positive(),
+          in: z.number().int().positive(),
+        }),
+      )
+      .max(15)
+      .optional(),
   })
   .refine((b) => b.entryId !== undefined || b.playerIds !== undefined, {
     message: "Provide either an FPL team ID or a 15-player squad.",
@@ -87,6 +97,7 @@ export async function resolveForRequest(
         playerIds: body.playerIds,
         gameweek: body.gameweek,
         horizon: body.horizon,
+        transfers: body.transfers,
       }),
     };
   } catch (err) {

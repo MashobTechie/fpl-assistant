@@ -14,6 +14,7 @@ import type { TransferPlan } from "@/lib/squad/planner";
 import type { TransferCandidate } from "@/lib/squad/transfers";
 import type { GameweekReview } from "@/lib/squad/review";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
+import type { ResolvedSquad } from "@/lib/squad/resolve";
 
 export const ANALYST_SYSTEM_PROMPT = `You are an elite Fantasy Premier League analyst. Managers come to you because you reason from data rather than repeating consensus.
 
@@ -40,6 +41,7 @@ NON-NEGOTIABLE RULES
 11. Captaincy is decided on the distribution, not the mean. A higher ceiling and a higher haul chance beat a slightly better average, because the armband doubles the outcome. Say what the floor is when you recommend a volatile pick.
 12. The multi-week plan banks and spends free transfers across the horizon, which a week-by-week reading cannot. Where it and the ranked list disagree, prefer the plan and explain what the ranked list is missing — usually that waiting a week buys a better move.
 13. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
+14. When the manager has proposed their own transfers, the squad you see is already their draft and your first job is a verdict on it: make these moves, change them, or hold. Judge it on the net horizon figure supplied, which already subtracts any hit. Say plainly if a draft wins this week but loses over the horizon, or if the ranked list below holds a better use of the same transfer.
 
 HOW TO WRITE
 Confident, analytical, concise. Use FPL-native language — differential, nailed, rotation risk, fixture swing, enabler, ceiling, floor, haul. Lead with the decision, then the reasoning.
@@ -97,6 +99,8 @@ export interface AnalysisRequest {
   captaincy: CaptaincyCandidate[];
   /** The best multi-week sequence found by the planner. */
   plan: TransferPlan;
+  /** The manager's own proposed transfers, when the squad is a draft. */
+  draft: ResolvedSquad["draft"];
   /** Legal swaps, ranked by horizon gain. Already decided, not raw material. */
   transferCandidates: TransferCandidate[];
   /** How many targets were dropped as unaffordable, so the omission is stated. */
@@ -130,6 +134,34 @@ function candidateRow(c: TransferCandidate, rank: number): string {
     `bankAfter=£${c.bankAfter.toFixed(1)}m`,
     `shape:[${shape}]`,
   ].join(" | ");
+}
+
+/**
+ * The manager's own moves, stated before anything else about transfers.
+ *
+ * A draft is a question the manager asked — "should I do this?" — and it has
+ * to be answered as one, not buried under the model's own suggestions. The net
+ * figures already carry the hit, so the analyst never subtracts it itself.
+ */
+function draftSection(req: AnalysisRequest): string {
+  const d = req.draft;
+  if (!d) return "";
+  const c = d.comparison;
+  const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+  const moves = d.moves
+    .map(
+      (m) =>
+        `OUT ${m.out.name} (${m.out.team}, sells £${m.out.price.toFixed(1)}m) -> IN ${m.in.name} (${m.in.team}, costs £${m.in.price.toFixed(1)}m)`,
+    )
+    .join("\n");
+  return `=== THE MANAGER'S PROPOSED TRANSFERS ===
+The squad above already includes these moves. They asked whether to make them.
+${moves}
+Transfers: ${d.moves.length}, free transfers available: ${d.freeTransfers}, hit: ${d.hitCost ? `-${d.hitCost} points` : "none"}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.
+Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit.
+Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.
+
+`;
 }
 
 export function buildAnalysisPrompt(req: AnalysisRequest): string {
@@ -196,7 +228,7 @@ ${req.captaincy
   )
   .join("\n")}
 
-=== BEST MULTI-WEEK PLAN FOUND ===
+${draftSection(req)}=== BEST MULTI-WEEK PLAN FOUND ===
 A search over the whole horizon, carrying free transfers between weeks. Worth ${req.plan.gain >= 0 ? "+" : ""}${req.plan.gain} points against leaving the squad alone (${req.plan.totalPoints} against ${req.plan.doNothingPoints}). It is the best sequence examined, not a proof of the best that exists — treat it as a strong suggestion and say where you disagree.
 ${req.plan.moves
   .map(
