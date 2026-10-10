@@ -14,12 +14,25 @@ import { Card, SectionHeading } from "./ui";
  * is the decision most weeks actually turn on. A plan worth two points over
  * five gameweeks is a plan not worth making.
  */
-export function PlanPanel({ plan }: { plan: TransferPlan }) {
+export function PlanPanel({
+  plan,
+  onTry,
+}: {
+  plan: TransferPlan;
+  /**
+   * Load this week's planned move into the transfer sandbox. Absent when
+   * there is nothing to load it into — a manual squad, or a locked gameweek.
+   */
+  onTry?: (transfer: { out: number; in: number }) => void;
+}) {
   if (plan.moves.length === 0) return null;
 
   const worthwhile = plan.gain >= 2;
   const transfers = plan.moves.filter((m) => m.transfer !== null).length;
   const hits = plan.moves.reduce((sum, m) => sum + m.hitCost, 0);
+  // Only the first week's move can be tried: a draft belongs to the deadline
+  // that has not passed, and the later weeks are conditional on it anyway.
+  const tryable = plan.moves[0].transfer;
 
   return (
     <Card className="p-5 sm:p-6">
@@ -102,6 +115,19 @@ export function PlanPanel({ plan }: { plan: TransferPlan }) {
                     {m.expectedPoints.toFixed(1)} xPts
                   </span>
                 </div>
+                {/* The plan was already computed; making the manager re-find
+                    these two names in the picker is busywork. */}
+                {i === 0 && onTry && tryable && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onTry({ out: tryable.outId, in: tryable.inId })
+                    }
+                    className="mt-1.5 rounded-lg bg-[--color-cyan]/15 px-2.5 py-1 text-[11px] font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25"
+                  >
+                    Try this move
+                  </button>
+                )}
                 <span className="text-[11px] text-[--color-ink-faint]">
                   {m.freeTransfers} free transfer
                   {m.freeTransfers === 1 ? "" : "s"} in hand

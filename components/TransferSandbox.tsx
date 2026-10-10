@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { PlayerProjection } from "@/lib/projections/engine";
 import type { TransferChip } from "@/lib/squad/draft";
@@ -33,11 +33,18 @@ export function TransferSandbox({
   onCheck,
   onClose,
   initialMoves,
+  initialTransfers,
   initialChip,
 }: {
   projections: ProjectionsResponse;
   /** Moves to start from — the draft being edited, when there is one. */
   initialMoves?: Map<number, Incoming>;
+  /**
+   * Moves to start from, by id — a planned transfer the manager asked to try.
+   * Resolved against the player list once it loads, because a plan carries
+   * names and ids but not the price and club a draft has to be checked on.
+   */
+  initialTransfers?: { out: number; in: number }[];
   /** The chip to start on — the draft being edited, when there is one. */
   initialChip?: TransferChip | null;
   checking: boolean;
@@ -61,6 +68,10 @@ export function TransferSandbox({
   const [chip, setChip] = useState<TransferChip | null>(initialChip ?? null);
   const [query, setQuery] = useState("");
 
+  // Seeded once, at mount: the panel is rendered fresh each time it opens, and
+  // re-applying a seed after the manager has edited it would undo their work.
+  const seed = useRef(initialTransfers);
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/players")
@@ -68,7 +79,28 @@ export function TransferSandbox({
         if (!r.ok) throw new Error(`Player list unavailable (${r.status})`);
         return r.json() as Promise<PlayersResponse>;
       })
-      .then((d) => !cancelled && setPlayers(d.players))
+      .then((d) => {
+        if (cancelled) return;
+        setPlayers(d.players);
+        const planned = seed.current;
+        if (!planned?.length) return;
+        const byId = new Map(d.players.map((p) => [p.id, p]));
+        setMoves((current) => {
+          const next = new Map(current);
+          for (const t of planned) {
+            const incoming = byId.get(t.in);
+            if (incoming) {
+              next.set(t.out, {
+                id: incoming.id,
+                name: incoming.name,
+                team: incoming.team,
+                cost: incoming.cost,
+              });
+            }
+          }
+          return next;
+        });
+      })
       .catch((e: Error) => !cancelled && setLoadError(e.message));
     return () => {
       cancelled = true;

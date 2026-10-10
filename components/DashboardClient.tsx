@@ -74,6 +74,10 @@ export function DashboardClient({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [sandboxSeed, setSandboxSeed] = useState<Map<number, Incoming> | undefined>();
   const [sandboxChip, setSandboxChip] = useState<TransferChip | null>(null);
+  // A planned move the manager asked to try, by id. The sandbox resolves it
+  // against the player list, which is where the price and club come from.
+  const [sandboxPlanned, setSandboxPlanned] =
+    useState<{ out: number; in: number }[] | undefined>();
   // Kept beside the moves so a re-analysis asks the same question: the same
   // fifteen on a wildcard and off it are different decisions.
   const [draftChip, setDraftChip] = useState<TransferChip | null>(null);
@@ -234,8 +238,29 @@ export function DashboardClient({
     setDraftError(null);
   }
 
+  /**
+   * Whether transfers can be tried at all: an imported squad has the real bank
+   * and selling prices to check against, a manual one does not, and a locked
+   * gameweek has no deadline left to transfer for. Computed once because two
+   * places offer the sandbox, and a gate enforced in one of them is not a gate.
+   */
+  const canDraft =
+    mode === "import" &&
+    Boolean(entryId) &&
+    !projections?.draft &&
+    (liveGameweek === null || gameweek !== liveGameweek);
+
+  /** Open the sandbox with a move already on the pitch. */
+  function trySandbox(transfers?: { out: number; in: number }[]) {
+    setSandboxSeed(undefined);
+    setSandboxChip(null);
+    setSandboxPlanned(transfers);
+    setSandbox(true);
+  }
+
   function editDraft() {
     const d = projections?.draft;
+    setSandboxPlanned(undefined);
     setSandboxChip(d?.chip ?? null);
     setSandboxSeed(
       d
@@ -445,8 +470,10 @@ export function DashboardClient({
               setDraftError(null);
               setSandboxSeed(undefined);
               setSandboxChip(null);
+              setSandboxPlanned(undefined);
             }}
             initialMoves={sandboxSeed}
+            initialTransfers={sandboxPlanned}
             initialChip={sandboxChip}
           />
         </Card>
@@ -464,22 +491,15 @@ export function DashboardClient({
             {/* Transfers can only be tried on an imported squad — that is the
                 only one with a real bank and selling prices to check against —
                 and only for a deadline that has not passed. */}
-            {mode === "import" &&
-              entryId &&
-              !projections.draft &&
-              (liveGameweek === null || gameweek !== liveGameweek) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSandboxSeed(undefined);
-                    setSandboxChip(null);
-                    setSandbox(true);
-                  }}
-                  className="order-last rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 sm:order-none"
-                >
-                  Try transfers
-                </button>
-              )}
+            {canDraft && (
+              <button
+                type="button"
+                onClick={() => trySandbox()}
+                className="order-last rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 sm:order-none"
+              >
+                Try transfers
+              </button>
+            )}
             <SegmentedControl
               value={view}
               onChange={setView}
@@ -520,7 +540,14 @@ export function DashboardClient({
         />
       )}
 
-      {projections && <PlanPanel plan={projections.plan} />}
+      {projections && (
+        <PlanPanel
+          plan={projections.plan}
+          // The plan is already solved; re-finding its two names in the picker
+          // by hand is busywork, so the move loads straight into the sandbox.
+          onTry={canDraft ? (t) => trySandbox([t]) : undefined}
+        />
+      )}
 
       {/* Order is this week, then the horizon, then what already happened:
           captaincy and the plan are decisions, the review is context. */}
