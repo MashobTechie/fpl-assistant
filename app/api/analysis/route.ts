@@ -56,8 +56,12 @@ export async function POST(request: Request) {
   // A draft's verdict depends on the hit it takes, not just where it ends up,
   // and it is framed as a proposal — so it must never be served back as the
   // analysis of a real squad that happens to have the same fifteen.
+  // The chip belongs in the key too: a Wildcard draft and a within-allowance
+  // draft of the same fifteen both take no hit, and asking "is this wildcard
+  // worth playing" is not the question "is this free transfer worth making".
   const hash = resolved.draft
-    ? `${squadHash(resolved.playerIds)}-draft-${resolved.draft.hitCost}`
+    ? `${squadHash(resolved.playerIds)}-draft-${resolved.draft.hitCost}` +
+      `-${resolved.draft.chip ?? "none"}`
     : squadHash(resolved.playerIds);
 
   if (!body.refresh) {

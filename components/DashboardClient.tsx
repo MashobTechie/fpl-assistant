@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import type { TransferChip } from "@/lib/squad/draft";
 import type {
   AnalysisResponse,
   GameweekAnalysisLike,
@@ -72,6 +73,10 @@ export function DashboardClient({
   const [checkingDraft, setCheckingDraft] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [sandboxSeed, setSandboxSeed] = useState<Map<number, Incoming> | undefined>();
+  const [sandboxChip, setSandboxChip] = useState<TransferChip | null>(null);
+  // Kept beside the moves so a re-analysis asks the same question: the same
+  // fifteen on a wildcard and off it are different decisions.
+  const [draftChip, setDraftChip] = useState<TransferChip | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +154,7 @@ export function DashboardClient({
     if (baseline) setProjections(baseline);
     setBaseline(null);
     setDraftMoves(null);
+    setDraftChip(null);
     setSandbox(false);
 
     // An imported squad is re-requested by its FPL ID. Sending its picks as a
@@ -175,7 +181,10 @@ export function DashboardClient({
    * and plan all describe the team you would have — and the analyst is asked
    * straight away, because a verdict is what the button promised.
    */
-  async function checkDraft(transfers: { out: number; in: number }[]) {
+  async function checkDraft(
+    transfers: { out: number; in: number }[],
+    chip: TransferChip | null,
+  ) {
     if (!entryId) return;
     setCheckingDraft(true);
     setDraftError(null);
@@ -183,6 +192,7 @@ export function DashboardClient({
       const body = {
         entryId: Number(entryId),
         transfers,
+        ...(chip ? { chip } : {}),
         ...(gameweek !== null ? { gameweek } : {}),
       };
       const res = await fetch("/api/projections", {
@@ -198,10 +208,15 @@ export function DashboardClient({
       setBaseline((b) => b ?? projections);
       setProjections(data as ProjectionsResponse);
       setDraftMoves(transfers);
+      setDraftChip(chip);
       setSandbox(false);
       setAnalysis(null);
       setAnalysisError(null);
-      void runAnalysis({ entryId: Number(entryId), transfers });
+      void runAnalysis({
+        entryId: Number(entryId),
+        transfers,
+        ...(chip ? { chip } : {}),
+      });
     } catch {
       setDraftError("Couldn't reach the server. Check your connection and try again.");
     } finally {
@@ -213,6 +228,7 @@ export function DashboardClient({
     if (baseline) setProjections(baseline);
     setBaseline(null);
     setDraftMoves(null);
+    setDraftChip(null);
     setAnalysis(null);
     setAnalysisError(null);
     setDraftError(null);
@@ -220,6 +236,7 @@ export function DashboardClient({
 
   function editDraft() {
     const d = projections?.draft;
+    setSandboxChip(d?.chip ?? null);
     setSandboxSeed(
       d
         ? new Map(
@@ -422,13 +439,15 @@ export function DashboardClient({
             projections={projections}
             checking={checkingDraft}
             error={draftError}
-            onCheck={(t) => void checkDraft(t)}
+            onCheck={(t, c) => void checkDraft(t, c)}
             onClose={() => {
               setSandbox(false);
               setDraftError(null);
               setSandboxSeed(undefined);
+              setSandboxChip(null);
             }}
             initialMoves={sandboxSeed}
+            initialChip={sandboxChip}
           />
         </Card>
       )}
@@ -453,6 +472,7 @@ export function DashboardClient({
                   type="button"
                   onClick={() => {
                     setSandboxSeed(undefined);
+                    setSandboxChip(null);
                     setSandbox(true);
                   }}
                   className="order-last rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 sm:order-none"
@@ -572,6 +592,7 @@ export function DashboardClient({
                       // A draft is re-analysed as a draft, not as the squad
                       // it replaced.
                       ...(draftMoves ? { transfers: draftMoves } : {}),
+                      ...(draftChip ? { chip: draftChip } : {}),
                     }
                   : { playerIds: projections.squad.map((p) => p.playerId) }),
                 // Force a fresh call only when something is already on screen.

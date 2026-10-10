@@ -41,7 +41,7 @@ NON-NEGOTIABLE RULES
 11. Captaincy is decided on the distribution, not the mean. A higher ceiling and a higher haul chance beat a slightly better average, because the armband doubles the outcome. Say what the floor is when you recommend a volatile pick.
 12. The multi-week plan banks and spends free transfers across the horizon, which a week-by-week reading cannot. Where it and the ranked list disagree, prefer the plan and explain what the ranked list is missing — usually that waiting a week buys a better move.
 13. A squad may hold at most three players from one club. A target marked CLUB_FULL means the squad already holds three from that club, so the outgoing player must be one of them. Respect this or the transfer is illegal.
-14. When the manager has proposed their own transfers, the squad you see is already their draft and your first job is a verdict on it: make these moves, change them, or hold. Judge it on the net horizon figure supplied, which already subtracts any hit. Say plainly if a draft wins this week but loses over the horizon, or if the ranked list below holds a better use of the same transfer.
+14. When the manager has proposed their own transfers, the squad you see is already their draft and your first job is a verdict on it: make these moves, change them, or hold. Judge it on the net horizon figure supplied, which already subtracts any hit. Say plainly if a draft wins this week but loses over the horizon, or if the ranked list below holds a better use of the same transfer. If a chip is being played with them, the verdict is on the chip as much as the moves — a Wildcard or Free Hit is spent once a season and a draft that gains a couple of points is not worth one.
 
 HOW TO WRITE
 Confident, analytical, concise. Use FPL-native language — differential, nailed, rotation risk, fixture swing, enabler, ceiling, floor, haul. Lead with the decision, then the reasoning.
@@ -148,6 +148,19 @@ function draftSection(req: AnalysisRequest): string {
   if (!d) return "";
   const c = d.comparison;
   const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+  // A chip changes what the figures mean, so it is stated with them rather
+  // than left for the analyst to infer from a hit of zero.
+  const chipLine = d.chip
+    ? `\nPlaying a ${d.chip === "wildcard" ? "WILDCARD" : "FREE HIT"}: the transfer limit is suspended, so these moves cost no hit however many there are.${
+        d.chipWarning ? ` Caveat: ${d.chipWarning}` : ""
+      }`
+    : "";
+  // A Free Hit squad is handed back after one gameweek. Everything downstream
+  // of this section — the plan, the ranked swaps, the chip values — describes
+  // the drafted fifteen, which on a Free Hit the manager does not keep.
+  const horizonNote = c.revertsNextWeek
+    ? `\nA Free Hit lasts one gameweek: the horizon figure above is scored on the squad they keep from next gameweek, so judge it on the GW${req.gameweek} figure alone. The plan and the ranked swaps below were computed on the drafted fifteen and do not survive the Free Hit — do not advise from them.`
+    : "";
   const moves = d.moves
     .map(
       (m) =>
@@ -157,9 +170,9 @@ function draftSection(req: AnalysisRequest): string {
   return `=== THE MANAGER'S PROPOSED TRANSFERS ===
 The squad above already includes these moves. They asked whether to make them.
 ${moves}
-Transfers: ${d.moves.length}, free transfers available: ${d.freeTransfers}, hit: ${d.hitCost ? `-${d.hitCost} points` : "none"}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.
-Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit.
-Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.
+Transfers: ${d.moves.length}, free transfers available: ${d.freeTransfers}, hit: ${d.hitCost ? `-${d.hitCost} points` : "none"}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.${chipLine}
+Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit. Both totals count the armband on the best player, as FPL scores it.
+Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.${horizonNote}
 
 `;
 }

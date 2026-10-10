@@ -106,3 +106,28 @@ export const SQUAD_BUDGET = 100.0;
 
 /** At most three players from any one Premier League club. */
 export const MAX_PER_CLUB = 3;
+
+// ------------------------------------------------------- when a draft is worth it
+//
+// Priors, not rules — they decide what the verdict *says*, never what it
+// computes, and they are here rather than in the component so the two kinds of
+// draft are judged on one tunable pair of numbers.
+
+/**
+ * The gain, in points over the horizon, at which a draft is worth a transfer.
+ *
+ * Not zero. A move that nets half a point is inside the error of any
+ * projection, and spending a free transfer on it gives up the option of a
+ * better one next week — which is worth more than the half point.
+ */
+export const DRAFT_WORTH_IT_POINTS = 2;
+
+/**
+ * The gain at which a draft is worth a Wildcard or a Free Hit.
+ *
+ * Much higher, because the chip is the scarce thing, not the transfer. There
+ * are two of each in a season and no way to earn another, so a chip spent on a
+ * three-point week is the expensive mistake this screen exists to prevent. A
+ * Free Hit is judged on its one gameweek against that same bar.
+ */
+export const CHIP_WORTH_IT_POINTS = 8;

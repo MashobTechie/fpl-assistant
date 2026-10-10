@@ -127,12 +127,45 @@ function pointsIn(p: PlayerProjection, gameweek: number): number {
     .reduce((sum, f) => sum + f.expectedPoints, 0);
 }
 
-/** What the best XI from a squad scores in one gameweek. */
+/**
+ * What the best XI from a squad scores in one gameweek, armband included.
+ *
+ * The captain has to be counted. A draft that brings in the player who would
+ * take the armband earns his points twice, and one that sells the current
+ * captain loses them twice — so comparing raw XI totals understates both
+ * directions by a whole premium score, which is most of the decision.
+ *
+ * The XI is still solved on the mean, because adding the armband cannot change
+ * which lineup wins: every formation fields the top-scoring player in each
+ * position, so the squad's highest scorer is in all of them and the doubled
+ * score is the same constant whichever shape is picked.
+ */
 function bestXI(squad: PlayerProjection[], gameweek: number): number {
-  return optimiseSquad(squad, (p) => pointsIn(p, gameweek)).startingXI.reduce(
-    (sum, p) => sum + pointsIn(p, gameweek),
-    0,
-  );
+  const score = (p: PlayerProjection) => pointsIn(p, gameweek);
+  const xi = optimiseSquad(squad, score).startingXI;
+  const total = xi.reduce((sum, p) => sum + score(p), 0);
+  const captain = xi.reduce((best, p) => Math.max(best, score(p)), 0);
+  return total + captain;
+}
+
+/** Chips that change what a set of transfers costs, or how long it lasts. */
+export type TransferChip = "wildcard" | "freehit";
+
+/**
+ * What these transfers cost in points.
+ *
+ * A Wildcard or Free Hit suspends the limit, so there is no hit however many
+ * moves are made. Charging one anyway costed a ten-move wildcard draft at −36
+ * and reported a rebuild that gains thirty points as a catastrophe.
+ */
+export function draftHitCost(
+  moves: number,
+  freeTransfers: number,
+  hitPerTransfer: number,
+  chip: TransferChip | null,
+): number {
+  if (chip) return 0;
+  return Math.max(0, moves - freeTransfers) * hitPerTransfer;
 }
 
 export interface DraftComparison {
@@ -146,6 +179,10 @@ export interface DraftComparison {
   netHorizon: number;
   /** After minus before this week, with the hit already taken off. */
   netThisWeek: number;
+  /** The chip being played with these transfers, if any. */
+  chip: TransferChip | null;
+  /** True on a Free Hit: the squad goes back to what it was next gameweek. */
+  revertsNextWeek: boolean;
 }
 
 /**
@@ -153,9 +190,15 @@ export interface DraftComparison {
  * actually field.
  *
  * Summing all fifteen would credit a new bench player with points he never
- * scores, so each squad is re-solved into its best XI for every gameweek. The
- * hit is charged once, in the week the transfers are made, because that is when
- * FPL deducts it.
+ * scores, so each squad is re-solved into its best XI for every gameweek, with
+ * the armband on its best player. The hit is charged once, in the week the
+ * transfers are made, because that is when FPL deducts it.
+ *
+ * A Free Hit lasts one gameweek and then the old squad comes back, so only
+ * this week's figure belongs to the draft at all — the rest of the horizon is
+ * scored on the squad the manager keeps. Without that, a Free Hit would be
+ * credited with five weeks of a team it holds for one, which is the single
+ * easiest way to talk someone into burning a chip.
  */
 export function compareDraft(
   before: PlayerProjection[],
@@ -163,13 +206,22 @@ export function compareDraft(
   gameweek: number,
   horizon: number,
   hitCost: number,
+  chip: TransferChip | null = null,
 ): DraftComparison {
-  const gameweeks = Array.from({ length: horizon }, (_, i) => gameweek + i);
-  const sum = (squad: PlayerProjection[]) =>
+  const later = Array.from({ length: horizon - 1 }, (_, i) => gameweek + i + 1);
+  const sum = (squad: PlayerProjection[], gameweeks: number[]) =>
     gameweeks.reduce((total, gw) => total + bestXI(squad, gw), 0);
 
   const thisWeek = { before: bestXI(before, gameweek), after: bestXI(after, gameweek) };
-  const span = { before: sum(before), after: sum(after) };
+  const laterBefore = sum(before, later);
+  // On a Free Hit the draft is gone by next week, so the weeks after this one
+  // are the squad the manager still owns, identical on both sides.
+  const laterAfter = chip === "freehit" ? laterBefore : sum(after, later);
+
+  const span = {
+    before: thisWeek.before + laterBefore,
+    after: thisWeek.after + laterAfter,
+  };
 
   return {
     thisWeek: { before: round1(thisWeek.before), after: round1(thisWeek.after) },
@@ -177,5 +229,7 @@ export function compareDraft(
     hitCost,
     netThisWeek: round1(thisWeek.after - thisWeek.before - hitCost),
     netHorizon: round1(span.after - span.before - hitCost),
+    chip,
+    revertsNextWeek: chip === "freehit",
   };
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { PlayerProjection } from "@/lib/projections/engine";
+import type { TransferChip } from "@/lib/squad/draft";
 import {
   MAX_PER_CLUB,
   type PlayerListItem,
@@ -32,13 +33,19 @@ export function TransferSandbox({
   onCheck,
   onClose,
   initialMoves,
+  initialChip,
 }: {
   projections: ProjectionsResponse;
   /** Moves to start from — the draft being edited, when there is one. */
   initialMoves?: Map<number, Incoming>;
+  /** The chip to start on — the draft being edited, when there is one. */
+  initialChip?: TransferChip | null;
   checking: boolean;
   error: string | null;
-  onCheck: (transfers: { out: number; in: number }[]) => void;
+  onCheck: (
+    transfers: { out: number; in: number }[],
+    chip: TransferChip | null,
+  ) => void;
   onClose: () => void;
 }) {
   const [players, setPlayers] = useState<PlayerListItem[] | null>(null);
@@ -48,6 +55,10 @@ export function TransferSandbox({
     () => new Map(initialMoves ?? []),
   );
   const [picking, setPicking] = useState<PlayerProjection | null>(null);
+  // A chip is the manager's to declare, not ours to infer: FPL grants a second
+  // set in the back half of the season and its public history does not say
+  // which half a played chip came from, so it cannot be read off reliably.
+  const [chip, setChip] = useState<TransferChip | null>(initialChip ?? null);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -85,7 +96,9 @@ export function TransferSandbox({
       }
     }
     const count = moves.size;
-    const hit = Math.max(0, count - budget.free) * budget.hitCost;
+    // A Wildcard or Free Hit suspends the limit, so there is no hit to show
+    // however many moves are made.
+    const hit = chip ? 0 : Math.max(0, count - budget.free) * budget.hitCost;
     const overClub = Object.entries(clubs).filter(([, n]) => n > MAX_PER_CLUB);
     return {
       bank: Math.round(bank * 10) / 10,
@@ -95,7 +108,7 @@ export function TransferSandbox({
       overClub,
       clubs,
     };
-  }, [moves, economics, budget, squadById]);
+  }, [moves, economics, budget, squadById, chip]);
 
   const problems: string[] = [];
   if (summary.filled < summary.count) {
@@ -286,10 +299,16 @@ export function TransferSandbox({
         </div>
       )}
 
+      <ChipChoice chip={chip} onChange={setChip} chips={projections.chips} />
+
       {/* The running total. Estimates only — the check below is the authority. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tally label="Transfers" value={String(summary.count)} />
-        <Tally label="Free" value={String(budget.free)} sub={budget.inferred ? "from your history" : undefined} />
+        <Tally
+          label="Free"
+          value={chip ? "∞" : String(budget.free)}
+          sub={chip ? "chip week" : budget.inferred ? "from your history" : undefined}
+        />
         <Tally
           label="Hit"
           value={summary.hit ? `−${summary.hit}` : "0"}
@@ -327,13 +346,21 @@ export function TransferSandbox({
           onClick={() =>
             onCheck(
               [...moves].map(([out, incoming]) => ({ out, in: incoming!.id })),
+              chip,
             )
           }
         >
           {checking ? "Checking…" : "Check it & analyse"}
         </Button>
         {summary.count > 0 && (
-          <Button variant="ghost" onClick={() => setMoves(new Map())} disabled={checking}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setMoves(new Map());
+              setChip(null);
+            }}
+            disabled={checking}
+          >
             Reset
           </Button>
         )}
@@ -341,6 +368,86 @@ export function TransferSandbox({
           Cancel
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Declaring a chip alongside the moves.
+ *
+ * Both chips here suspend the transfer limit, which is the whole reason this
+ * belongs in the sandbox: without it, a ten-move wildcard draft is costed at
+ * -36 and reads as a disaster. A Free Hit also expires after one gameweek, so
+ * it is only ever judged on this week's figure — stated here, because a chip
+ * spent on a two-point gain is the expensive mistake this screen exists to
+ * prevent.
+ */
+function ChipChoice({
+  chip,
+  onChange,
+  chips,
+}: {
+  chip: TransferChip | null;
+  onChange: (c: TransferChip | null) => void;
+  chips: ProjectionsResponse["chips"];
+}) {
+  const options: { id: TransferChip; label: string; note: string }[] = [
+    {
+      id: "wildcard",
+      label: "Wildcard",
+      note: "Unlimited free transfers, and you keep the squad.",
+    },
+    {
+      id: "freehit",
+      label: "Free Hit",
+      note: "Unlimited free transfers for this gameweek only — the squad reverts after it.",
+    },
+  ];
+  const spent = (id: TransferChip) =>
+    chips.find((c) => c.chip === id)?.available === false;
+
+  return (
+    <div className="rounded-xl border border-[--color-border] bg-[--color-base] p-3">
+      <div className="eyebrow mb-2 text-[9px] text-[--color-ink-faint]">
+        Playing a chip?
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+            chip === null
+              ? "border-[--color-cyan] text-[--color-cyan]"
+              : "border-[--color-border] text-[--color-ink-muted] hover:text-[--color-ink]"
+          }`}
+        >
+          No chip
+        </button>
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(chip === o.id ? null : o.id)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+              chip === o.id
+                ? "border-[--color-accent] text-[--color-accent]"
+                : "border-[--color-border] text-[--color-ink-muted] hover:text-[--color-ink]"
+            }`}
+          >
+            {o.label}
+            {spent(o.id) && (
+              <span className="ml-1 text-[--color-ink-faint]">· used</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {chip && (
+        <p className="mt-2 text-[11px] leading-relaxed text-[--color-ink-faint]">
+          {options.find((o) => o.id === chip)!.note}
+          {spent(chip) &&
+            " Your history already shows one played this season — fine if that was your first-half chip."}
+        </p>
+      )}
     </div>
   );
 }

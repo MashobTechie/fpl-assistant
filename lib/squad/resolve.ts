@@ -42,10 +42,12 @@ import {
 import {
   applyDraft,
   compareDraft,
+  draftHitCost,
   DraftError,
   type DraftComparison,
   type DraftMove,
   type DraftTransfer,
+  type TransferChip,
 } from "./draft";
 import { planTransfers, type TransferPlan } from "./planner";
 import { rankTransfers, type TransferCandidate } from "./transfers";
@@ -108,6 +110,16 @@ export interface ResolvedSquad {
     bankAfter: number;
     comparison: DraftComparison;
     baselineIds: number[];
+    /** The chip played with these transfers, which makes them free. */
+    chip: TransferChip | null;
+    /**
+     * Set when the public history says this chip has already been played.
+     * A warning rather than a refusal: FPL now grants a second set of chips
+     * in the back half of the season and the history endpoint does not say
+     * which half a chip belonged to, so blocking on it would refuse moves
+     * the manager can legitimately make.
+     */
+     chipWarning: string | null;
   } | null;
   /** Targets dropped because nothing in the squad could fund them. */
   unaffordableTargets: number;
@@ -170,6 +182,11 @@ interface ResolveOptions {
    * against the squad's real selling prices and bank, never a fresh £100m.
    */
   transfers?: DraftTransfer[];
+  /**
+   * A chip played alongside those transfers. A Wildcard or Free Hit makes them
+   * free however many there are, and a Free Hit only lasts the one gameweek.
+   */
+  chip?: TransferChip;
 }
 
 export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad> {
@@ -202,6 +219,14 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   const sellPrices: Record<number, number> = {};
   let baselineIds: number[] | null = null;
   let draftMoves: DraftMove[] = [];
+
+  if (opts.chip && !opts.transfers?.length) {
+    throw new SquadResolutionError(
+      `A ${opts.chip === "wildcard" ? "Wildcard" : "Free Hit"} only means something ` +
+        "alongside transfers. Make some moves first.",
+      "invalid_draft",
+    );
+  }
 
   if (opts.transfers?.length && !opts.entryId) {
     // A manual squad has no FPL position to transfer from — its picks are
@@ -377,22 +402,35 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let draft: ResolvedSquad["draft"] = null;
   let freeForPlan = budget.free;
   if (baselineIds && draftMoves.length > 0) {
-    const hitCost =
-      Math.max(0, draftMoves.length - budget.free) * budget.hitCost;
+    const chip = opts.chip ?? null;
+    const hitCost = draftHitCost(
+      draftMoves.length,
+      budget.free,
+      budget.hitCost,
+      chip,
+    );
     const baseline = baselineIds.map((id) =>
       projectPlayer(elementsById.get(id)!, ctx, gameweek, horizon),
     );
+    const played = new Set((history?.chips ?? []).map((c) => c.name));
     draft = {
       moves: draftMoves,
       freeTransfers: budget.free,
       hitCost,
       bankAfter: bank ?? 0,
-      comparison: compareDraft(baseline, squad, gameweek, horizon, hitCost),
+      comparison: compareDraft(baseline, squad, gameweek, horizon, hitCost, chip),
       baselineIds,
+      chip,
+      chipWarning:
+        chip && played.has(chip)
+          ? `Your history shows a ${chip === "wildcard" ? "Wildcard" : "Free Hit"} ` +
+            "already played this season. If that was your first-half one, this is fine."
+          : null,
     };
     // The draft has spent this week's allowance, so the plan starts from
-    // whatever is left rather than planning with transfers already used.
-    freeForPlan = Math.max(0, budget.free - draftMoves.length);
+    // whatever is left rather than planning with transfers already used. A
+    // chip week spends none of it.
+    freeForPlan = chip ? budget.free : Math.max(0, budget.free - draftMoves.length);
   }
 
   const transferCandidates = rankTransfers(

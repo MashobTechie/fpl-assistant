@@ -1,4 +1,8 @@
-import type { ProjectionsResponse } from "@/lib/types";
+import {
+  CHIP_WORTH_IT_POINTS,
+  DRAFT_WORTH_IT_POINTS,
+  type ProjectionsResponse,
+} from "@/lib/types";
 import { Card, SectionHeading, StatTile } from "./ui";
 
 /**
@@ -22,9 +26,16 @@ export function DraftVerdict({
   onEdit: () => void;
 }) {
   const c = draft.comparison;
-  const worth = c.netHorizon >= 2;
-  const marginal = !worth && c.netHorizon > -0.5;
+  const chipLabel = draft.chip === "wildcard" ? "Wildcard" : "Free Hit";
+
+  // A Free Hit is handed back after this gameweek, so the horizon figure is
+  // mostly the squad they keep either way — this week is the whole decision.
+  const decisive = c.revertsNextWeek ? c.netThisWeek : c.netHorizon;
+  const bar = draft.chip ? CHIP_WORTH_IT_POINTS : DRAFT_WORTH_IT_POINTS;
+  const worth = decisive >= bar;
+  const marginal = !worth && decisive > -0.5;
   const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+  const over = c.revertsNextWeek ? "this gameweek" : `${horizon} gameweeks`;
 
   return (
     <Card accent className="p-5 sm:p-6">
@@ -39,9 +50,19 @@ export function DraftVerdict({
         <span>
           You can make {draft.moves.length === 1 ? "this move" : "these moves"} in
           the real app
-          {draft.hitCost > 0 ? `, for a −${draft.hitCost} hit.` : " with no hit."}
+          {draft.chip
+            ? ` with no hit — your ${chipLabel} covers all ${draft.moves.length}.`
+            : draft.hitCost > 0
+              ? `, for a −${draft.hitCost} hit.`
+              : " with no hit."}
         </span>
       </p>
+
+      {draft.chipWarning && (
+        <p className="mb-4 rounded-lg bg-[--color-cyan]/10 px-3.5 py-2.5 text-sm text-[--color-ink-muted]">
+          {draft.chipWarning}
+        </p>
+      )}
 
       <ul className="mb-4 flex flex-col gap-1.5">
         {draft.moves.map((m) => (
@@ -66,10 +87,18 @@ export function DraftVerdict({
         <StatTile
           label={`Next ${horizon} GW`}
           value={sign(c.netHorizon)}
-          sub={`${c.horizon.before} → ${c.horizon.after}`}
-          tone={worth ? "accent" : "default"}
+          sub={
+            c.revertsNextWeek
+              ? "squad reverts after this week"
+              : `${c.horizon.before} → ${c.horizon.after}`
+          }
+          tone={worth && !c.revertsNextWeek ? "accent" : "default"}
         />
-        <StatTile label="Hit" value={draft.hitCost ? `−${draft.hitCost}` : "0"} sub={`${draft.freeTransfers} free`} />
+        <StatTile
+          label={draft.chip ? "Chip" : "Hit"}
+          value={draft.chip ? chipLabel : draft.hitCost ? `−${draft.hitCost}` : "0"}
+          sub={draft.chip ? "no hit, limit suspended" : `${draft.freeTransfers} free`}
+        />
         <StatTile label="Bank after" value={`£${draft.bankAfter.toFixed(1)}m`} />
       </div>
 
@@ -83,11 +112,15 @@ export function DraftVerdict({
         }`}
       >
         {worth
-          ? `Worth doing on the numbers: ${sign(c.netHorizon)} over ${horizon} gameweeks after any hit.`
+          ? `Worth doing on the numbers: ${sign(decisive)} over ${over}${draft.chip ? "" : " after any hit"}.`
           : marginal
-            ? "About level. Not worth spending a transfer on — banking it keeps the option for a better move."
-            : `Costs you ${Math.abs(c.netHorizon).toFixed(1)} over ${horizon} gameweeks${draft.hitCost ? " once the hit is counted" : ""}. The squad is better as it is.`}{" "}
-        <span className="text-[--color-ink-faint]">Best lineup each week, before vs after.</span>
+            ? draft.chip
+              ? `${sign(decisive)} over ${over} — short of the ${bar} points a ${chipLabel} should earn. There are two in a season; hold it for a week that needs one.`
+              : "About level. Not worth spending a transfer on — banking it keeps the option for a better move."
+            : `Costs you ${Math.abs(decisive).toFixed(1)} over ${over}${draft.hitCost ? " once the hit is counted" : ""}. The squad is better as it is.`}{" "}
+        <span className="text-[--color-ink-faint]">
+          Best lineup each week with the armband, before vs after.
+        </span>
       </p>
 
       <div className="mt-4 flex flex-wrap gap-3">

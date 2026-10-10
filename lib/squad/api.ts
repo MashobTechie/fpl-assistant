@@ -43,6 +43,14 @@ export const SquadRequestSchema = z
       )
       .max(15)
       .optional(),
+    /**
+     * A chip played with those transfers. Both suspend the transfer limit, so
+     * the draft is costed without a hit; a Free Hit also expires after the one
+     * gameweek. Taken from the manager rather than inferred: FPL grants a
+     * second set of chips in the back half of the season and its public
+     * history does not say which half a played chip came from.
+     */
+    chip: z.enum(["wildcard", "freehit"]).optional(),
   })
   .refine((b) => b.entryId !== undefined || b.playerIds !== undefined, {
     message: "Provide either an FPL team ID or a 15-player squad.",
@@ -98,6 +106,7 @@ export async function resolveForRequest(
         gameweek: body.gameweek,
         horizon: body.horizon,
         transfers: body.transfers,
+        chip: body.chip,
       }),
     };
   } catch (err) {
