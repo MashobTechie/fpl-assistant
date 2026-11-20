@@ -10,13 +10,11 @@
  */
 
 import {
-  simulateFixture,
+  simulatePlayer,
   summarise,
   type PointsDistribution,
 } from "@/lib/projections/distribution";
 import type { PlayerProjection } from "@/lib/projections/engine";
-import * as K from "@/lib/projections/constants";
-import { POSITION_ID } from "@/lib/fpl/types";
 
 export interface Formation {
   defenders: number;
@@ -136,19 +134,8 @@ export function captaincyCandidates(
 ): CaptaincyCandidate[] {
   return [...startingXI]
     .map((player) => {
-      const type = POSITION_ID[player.position];
-      const fixtures = player.perFixture.filter((f) => f.gameweek === gameweek);
-
-      // A double gameweek is two independent matches, so the samples add.
-      const samples = fixtures.flatMap((f, i) =>
-        simulateFixture(
-          f,
-          K.POINTS_PER_GOAL[type],
-          K.POINTS_PER_ASSIST,
-          K.POINTS_PER_CLEAN_SHEET[type],
-          player.playerId * 7919 + gameweek * 131 + i,
-        ),
-      );
+      const plays = player.perFixture.some((f) => f.gameweek === gameweek);
+      const samples = plays ? simulatePlayer(player, gameweek) : [];
 
       const distribution =
         samples.length > 0

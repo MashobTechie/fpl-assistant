@@ -21,7 +21,9 @@
  * is possible and considerably harder to read.
  */
 
-import type { FixtureProjection } from "./engine";
+import { POSITION_ID } from "@/lib/fpl/types";
+import type { FixtureProjection, PlayerProjection } from "./engine";
+import * as K from "./constants";
 
 export interface PointsDistribution {
   mean: number;
@@ -134,3 +136,41 @@ export function summarise(samples: number[]): PointsDistribution {
     pBlank: prob(sorted.filter((s) => s <= 2).length / sorted.length),
   };
 }
+
+/**
+ * One player's gameweek, sampled.
+ *
+ * The seed is a function of the player and the gameweek and nothing else, on
+ * purpose. It makes a projection reproducible, and it makes two squads
+ * comparable: the same player sampled in both draws the same numbers, so when
+ * the difference between a squad and a draft of it is taken sample by sample,
+ * the fourteen players they share cancel exactly. Sampling them independently
+ * instead would pile fourteen players' worth of variance onto a question about
+ * one, and every answer would come out near a coin toss.
+ *
+ * A double gameweek is two independent matches, so the samples add.
+ */
+export function simulatePlayer(
+  player: PlayerProjection,
+  gameweek: number,
+): number[] {
+  const type = POSITION_ID[player.position];
+  const fixtures = player.perFixture.filter((f) => f.gameweek === gameweek);
+  if (fixtures.length === 0) return new Array(SAMPLES).fill(0);
+
+  const total = new Array<number>(SAMPLES).fill(0);
+  fixtures.forEach((fixture, i) => {
+    const samples = simulateFixture(
+      fixture,
+      K.POINTS_PER_GOAL[type],
+      K.POINTS_PER_ASSIST,
+      K.POINTS_PER_CLEAN_SHEET[type],
+      player.playerId * 7919 + gameweek * 131 + i,
+    );
+    for (let s = 0; s < SAMPLES; s++) total[s] += samples[s];
+  });
+  return total;
+}
+
+/** How many draws each simulation takes, so callers can size their own. */
+export const SAMPLE_COUNT = SAMPLES;

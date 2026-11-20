@@ -12,6 +12,10 @@
  * list of swaps, applied here against that squad's own money.
  */
 
+import {
+  SAMPLE_COUNT,
+  simulatePlayer,
+} from "@/lib/projections/distribution";
 import type { FplElement } from "@/lib/fpl/types";
 import { POSITION_NAME } from "@/lib/fpl/types";
 import type { PlayerProjection } from "@/lib/projections/engine";
@@ -148,6 +152,77 @@ function bestXI(squad: PlayerProjection[], gameweek: number): number {
   return total + captain;
 }
 
+/**
+ * How a gameweek's XI could actually turn out, sample by sample.
+ *
+ * The armband is applied to the highest-projected starter and fixed before the
+ * draws, because that is when a manager picks it — re-deciding it per sample
+ * would model a captaincy chosen with hindsight and overstate every squad.
+ */
+function xiSamples(squad: PlayerProjection[], gameweek: number): number[] {
+  const score = (p: PlayerProjection) => pointsIn(p, gameweek);
+  const xi = optimiseSquad(squad, score).startingXI;
+  const captain = xi.reduce((best, p) => (score(p) > score(best) ? p : best), xi[0]);
+
+  const totals = new Array<number>(SAMPLE_COUNT).fill(0);
+  for (const player of xi) {
+    const samples = simulatePlayer(player, gameweek);
+    const multiplier = player.playerId === captain.playerId ? 2 : 1;
+    for (let i = 0; i < SAMPLE_COUNT; i++) totals[i] += samples[i] * multiplier;
+  }
+  return totals;
+}
+
+export interface DraftOdds {
+  /** How often the draft beats doing nothing this gameweek, after the hit. */
+  paysOff: number;
+  /** The tenth and ninetieth percentiles of the difference it makes. */
+  floor: number;
+  ceiling: number;
+}
+
+/**
+ * How likely the draft is to be the right call, not just how much it gains.
+ *
+ * A mean of +1.5 can be a near-certain gain or a coin toss with a long tail,
+ * and those are different decisions — the second is a reason to hold a
+ * transfer. The engine already produces the parameters, so the difference
+ * between the two squads can be sampled rather than guessed at.
+ *
+ * The difference is taken sample by sample, which is the whole trick: the
+ * fourteen players the two squads share draw identical numbers (the seed is a
+ * function of the player and the gameweek) and cancel exactly. Sampling the
+ * squads independently would add fourteen players' worth of noise to a
+ * question about one, and every honest answer would collapse toward 50%.
+ *
+ * This gameweek only. The draft is a decision about this deadline, and
+ * compounding four more weeks of simulated variance would widen the interval
+ * until it said nothing.
+ */
+export function draftOdds(
+  before: PlayerProjection[],
+  after: PlayerProjection[],
+  gameweek: number,
+  hitCost: number,
+): DraftOdds {
+  const baseline = xiSamples(before, gameweek);
+  const drafted = xiSamples(after, gameweek);
+
+  const difference = drafted
+    .map((points, i) => points - baseline[i] - hitCost)
+    .sort((a, b) => a - b);
+  const at = (q: number) =>
+    difference[Math.min(difference.length - 1, Math.floor(q * difference.length))];
+
+  return {
+    // To a hundredth: rounding to a tenth collapses 54% and 64% onto the same
+    // figure, and that is most of the difference between acting and holding.
+    paysOff: Math.round((difference.filter((d) => d > 0).length / difference.length) * 100) / 100,
+    floor: round1(at(0.1)),
+    ceiling: round1(at(0.9)),
+  };
+}
+
 /** Chips that change what a set of transfers costs, or how long it lasts. */
 export type TransferChip = "wildcard" | "freehit";
 
@@ -183,6 +258,8 @@ export interface DraftComparison {
   chip: TransferChip | null;
   /** True on a Free Hit: the squad goes back to what it was next gameweek. */
   revertsNextWeek: boolean;
+  /** How often these moves are the right call this gameweek, and by how much. */
+  odds: DraftOdds;
 }
 
 /**
@@ -231,5 +308,6 @@ export function compareDraft(
     netHorizon: round1(span.after - span.before - hitCost),
     chip,
     revertsNextWeek: chip === "freehit",
+    odds: draftOdds(before, after, gameweek, hitCost),
   };
 }

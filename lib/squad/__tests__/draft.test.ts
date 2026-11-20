@@ -100,7 +100,15 @@ test("prices a player bought in the draft at today's cost if sold again", () => 
 // hit once per gameweek instead of once, and crediting a bench player with
 // points he never scores.
 
-/** Just the fields compareDraft and the optimiser read. */
+/**
+ * Just the fields compareDraft and the optimiser read.
+ *
+ * The breakdown is here because the comparison also simulates the gameweek to
+ * report how often the draft pays off, and that reads the underlying rates
+ * rather than the total. It is deterministic on purpose — certain to play, all
+ * the points in the steady terms — so these tests measure the means they are
+ * about and not sampling noise.
+ */
 function player(
   playerId: number,
   position: PlayerProjection["position"],
@@ -112,7 +120,25 @@ function player(
     position,
     webName: `P${playerId}`,
     nextGameweekPoints: perWeek,
-    perFixture: gameweeks.map((gameweek) => ({ gameweek, expectedPoints: perWeek })),
+    perFixture: gameweeks.map((gameweek) => ({
+      gameweek,
+      opponent: "OPP",
+      isHome: true,
+      difficulty: 3,
+      expectedMinutes: 90,
+      expectedPoints: perWeek,
+      breakdown: {
+        appearance: 2,
+        goals: 0,
+        assists: 0,
+        cleanSheet: 0,
+        saves: 0,
+        defensiveContribution: 0,
+        bonus: Math.max(0, perWeek - 2),
+        goalsConceded: 0,
+        discipline: 0,
+      },
+    })),
   } as unknown as PlayerProjection;
 }
 
@@ -220,4 +246,94 @@ test("a chip suspends the transfer limit, however many moves are made", () => {
   assert.equal(draftHitCost(10, 1, 4, null), 36);
   assert.equal(draftHitCost(1, 1, 4, null), 0);
   assert.equal(draftHitCost(1, 0, 4, null), 4);
+});
+
+// ------------------------------------------------------------------ the odds
+//
+// A mean of +1.5 can be a near-certain gain or a coin toss, and those are
+// different decisions. These pin the two properties that make the figure
+// trustworthy: shared players cancel, and the hit moves the odds.
+
+/** A player whose fixture has real variance, so the odds are not degenerate. */
+function variable(
+  playerId: number,
+  position: PlayerProjection["position"],
+  goals: number,
+  gameweeks: number[],
+): PlayerProjection {
+  return {
+    playerId,
+    position,
+    webName: `V${playerId}`,
+    nextGameweekPoints: 2 + goals,
+    perFixture: gameweeks.map((gameweek) => ({
+      gameweek,
+      opponent: "OPP",
+      isHome: true,
+      difficulty: 3,
+      expectedMinutes: 85,
+      expectedPoints: 2 + goals,
+      breakdown: {
+        appearance: 1.9,
+        goals,
+        assists: 0.4,
+        cleanSheet: 0,
+        saves: 0,
+        defensiveContribution: 0,
+        bonus: 0.3,
+        goalsConceded: 0,
+        discipline: 0,
+      },
+    })),
+  } as unknown as PlayerProjection;
+}
+
+/** A legal fifteen of identical, variable players. */
+function variableSquad(gameweeks: number[]): PlayerProjection[] {
+  const squad: PlayerProjection[] = [];
+  let id = 1;
+  for (const [position, count] of [
+    ["GKP", 2],
+    ["DEF", 5],
+    ["MID", 5],
+    ["FWD", 3],
+  ] as const) {
+    for (let i = 0; i < count; i++) squad.push(variable(id++, position, 1.2, gameweeks));
+  }
+  return squad;
+}
+
+test("an identical draft is a coin toss, because every player cancels", () => {
+  // Nothing changed, so the difference is exactly zero in every sample: the
+  // shared players must draw the same numbers on both sides. Sampling them
+  // independently would put this near 0.5 with a wide swing.
+  const squad = variableSquad([10]);
+  const c = compareDraft(squad, squad, 10, 1, 0);
+  assert.equal(c.odds.paysOff, 0);
+  assert.equal(c.odds.floor, 0);
+  assert.equal(c.odds.ceiling, 0);
+});
+
+test("a real upgrade pays off more often than not, and the hit moves it", () => {
+  const before = variableSquad([10]);
+  // A forward twice as likely to score, so he starts and takes the armband.
+  const after = before.map((p) =>
+    p.playerId === 13 ? variable(913, "FWD", 2.6, [10]) : p,
+  );
+
+  const free = compareDraft(before, after, 10, 1, 0);
+  const hit = compareDraft(before, after, 10, 1, 4);
+
+  assert.ok(free.odds.paysOff > 0.5, `free draft pays off ${free.odds.paysOff}`);
+  assert.ok(
+    hit.odds.paysOff < free.odds.paysOff,
+    `a -4 should lower ${free.odds.paysOff}, got ${hit.odds.paysOff}`,
+  );
+  // The hit shifts the whole difference down by exactly four.
+  assert.ok(
+    Math.abs(free.odds.floor - 4 - hit.odds.floor) < 0.001,
+    `${free.odds.floor} - 4 vs ${hit.odds.floor}`,
+  );
+  // And the swing is real: a mean alone would not say this.
+  assert.ok(free.odds.ceiling > free.odds.floor, "the draft should have a spread");
 });

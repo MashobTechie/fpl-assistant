@@ -155,6 +155,8 @@ export function DraftVerdict({
 
       {save && <SaveDraft draft={draft} save={save} />}
 
+      <Odds odds={c.odds} hit={draft.hitCost} />
+
       {draft.hitUnknown && (
         <p className="mt-3 text-xs leading-relaxed text-[--color-ink-faint]">
           This squad was built here rather than imported, so there is no FPL
@@ -295,4 +297,50 @@ function proposeName(draft: NonNullable<ProjectionsResponse["draft"]>): string {
   const incoming = draft.moves.map((m) => m.in.name).join(", ");
   const base = chip ? `${chip}: ${incoming}` : `${draft.moves.length} moves — ${incoming}`;
   return base.slice(0, 60);
+}
+
+/**
+ * How often the moves are right, beside how much they gain.
+ *
+ * The mean is the decision for a season and a poor one for a single week. A
+ * gain of +1.5 that lands four weeks in ten is a reason to keep the transfer;
+ * the same +1.5 that lands nine weeks in ten is a reason to make it, and the
+ * headline figure cannot tell them apart. The spread is the middle eighty per
+ * cent of outcomes — not the worst case, which is always a blank.
+ */
+function Odds({
+  odds,
+  hit,
+}: {
+  odds: NonNullable<ProjectionsResponse["draft"]>["comparison"]["odds"];
+  hit: number;
+}) {
+  // Nothing changed this gameweek — a draft for a later one, or a swap between
+  // two players with no fixture. A certainty is not worth dressing up as odds.
+  if (odds.floor === 0 && odds.ceiling === 0) return null;
+
+  const percent = Math.round(odds.paysOff * 100);
+  const confident = odds.paysOff >= 0.7;
+  const coinToss = odds.paysOff > 0.4 && odds.paysOff < 0.6;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+      <span
+        className={`numeric font-semibold ${
+          confident ? "text-[--color-accent]" : "text-[--color-ink]"
+        }`}
+      >
+        {percent}%
+      </span>
+      <span className="text-[--color-ink-muted]">
+        of the time this gameweek{hit > 0 ? ", after the hit" : ""}.
+        {coinToss && " Close to a coin toss — the gain is inside the noise."}
+      </span>
+      <span className="text-[11px] text-[--color-ink-faint]">
+        Middle 80% of outcomes: {odds.floor >= 0 ? "+" : ""}
+        {odds.floor.toFixed(1)} to {odds.ceiling >= 0 ? "+" : ""}
+        {odds.ceiling.toFixed(1)}.
+      </span>
+    </div>
+  );
 }

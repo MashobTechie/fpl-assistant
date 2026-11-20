@@ -181,6 +181,7 @@ ${moves}
 Transfers: ${d.moves.length}, free transfers available: ${d.hitUnknown ? "UNKNOWN" : d.freeTransfers}, hit: ${hitPhrase}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.${chipLine}
 Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit. Both totals count the armband on the best player, as FPL scores it.
 Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.${horizonNote}
+Simulated: these moves come out ahead in ${Math.round(c.odds.paysOff * 100)}% of this gameweek's outcomes, and the middle 80% of them run from ${sign(c.odds.floor)} to ${sign(c.odds.ceiling)}. A small mean gain that lands less than half the time is a reason to hold the transfer, not to make it; a small gain that lands four weeks in five is worth taking. Say which of those this is.
 
 `;
 }

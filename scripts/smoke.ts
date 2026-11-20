@@ -256,6 +256,18 @@ async function main() {
       manualWildcard.body?.draft?.chip === "wildcard",
   );
 
+  // The odds beside the mean. A gain that lands less than half the time is a
+  // reason to hold the transfer, and a mean cannot say so.
+  const odds = manualDraft.body?.draft?.comparison?.odds;
+  check(
+    "the verdict carries how often it pays off",
+    typeof odds?.paysOff === "number" &&
+      odds.paysOff >= 0 &&
+      odds.paysOff <= 1 &&
+      odds.ceiling >= odds.floor,
+    odds ? `${Math.round(odds.paysOff * 100)}%, swing ${odds.floor} to ${odds.ceiling}` : "absent",
+  );
+
   // A Free Hit hands the squad back after one gameweek, so the plan beside
   // the verdict has to describe the squad they keep. The tell is the plan's
   // do-nothing total: on a Free Hit it must match the undrafted squad's, and
