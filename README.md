@@ -35,12 +35,20 @@ cp .env.example .env.local   # then fill in the three values
 ```
 
 Apply the database schema by pasting [supabase/schema.sql](supabase/schema.sql)
-into the Supabase SQL editor. It creates `profiles`, `squads` and `analyses`,
-enables row-level security on all three, and adds a trigger that creates a
-profile row on signup.
+into the Supabase SQL editor. It creates `profiles`, `squads`, `analyses` and
+`drafts`, enables row-level security on all of them, and adds a trigger that
+creates a profile row on signup.
 
 ```bash
 npm run dev      # http://localhost:3000
+```
+
+Working locally against the Supabase CLI instead:
+
+```bash
+npx supabase start    # applies supabase/migrations/ to a local stack
+npm run dev
+npm run smoke         # drives the real routes, signed in, and cleans up after
 ```
 
 ## Using it
@@ -55,6 +63,16 @@ Sign up, then either:
 Manual entry is not just a fallback. FPL does not publish a manager's picks until
 that gameweek's deadline has passed, so importing by ID cannot work for a squad
 that is not yet locked in.
+
+Then try transfers before making them. Tap a shirt to sell, pick who comes in,
+and the answer covers both questions: whether FPL would let you make the move,
+priced from your real selling prices and bank, and whether it is worth it —
+what it gains over the horizon, what any hit costs, and how often it actually
+pays off rather than only how much it gains on average. Declare a Wildcard or
+Free Hit and the limit is suspended; a Free Hit is judged on its one gameweek,
+because that is how long you keep the squad. Drafts can be saved under a name,
+which is how you hold two side by side, and an unsaved one survives a reload.
+Nothing is ever sent to FPL — you still make the moves there yourself.
 
 ## Reading the output
 
@@ -75,10 +93,14 @@ low-confidence rows with visible caution.
 
 ```bash
 npm run dry-run    # live FPL data -> projections -> the exact Claude prompt, without calling the API
+npm test           # the maths and the transfer rules
+npm run smoke      # the real HTTP routes against local Supabase (needs npm run dev)
 npm run build && npm run lint && npm run typecheck
 ```
 
-`dry-run` is the fastest way to check a change to the projection maths.
+`dry-run` is the fastest way to check a change to the projection maths, and
+`smoke` the fastest way to check anything that touches the database. Neither
+spends an API call.
 
 Model priors — fixture-difficulty multipliers, clean-sheet probabilities,
 minutes priors for players with no history — are all in
