@@ -125,11 +125,23 @@ function cautionLine(
 ): string | null {
   // Someone in the eleven who may not finish the match. The most actionable
   // caveat there is, because the fix is a bench order.
-  const parttime = optimal.startingXI
-    .filter((p) => p.status === "a" && p.expectedMinutes < 60)
-    .sort((a, b) => a.expectedMinutes - b.expectedMinutes)[0];
+  //
+  // A goalkeeper outranks an outfielder on the same minutes, which is not what
+  // ranking by minutes alone does. A keeper who loses his place scores nothing
+  // at all, where a midfielder withdrawn at fifty-five has already banked his
+  // appearance points and most of his chance of a goal. The analyst made
+  // exactly this substitution on its first real run — it flagged a rotating
+  // keeper over a 55-minute midfielder — and it was right to.
+  const doubtful = optimal.startingXI.filter(
+    (p) => p.status === "a" && p.expectedMinutes < 60,
+  );
+  const parttime =
+    doubtful.find((p) => p.position === "GKP") ??
+    [...doubtful].sort((a, b) => a.expectedMinutes - b.expectedMinutes)[0];
   if (parttime) {
-    return `${parttime.webName} is only expected to play about ${Math.round(parttime.expectedMinutes)} minutes, so he may not last the game.`;
+    return parttime.position === "GKP"
+      ? `${parttime.webName} is not starting every week in goal, and a goalkeeper who is left out scores nothing at all.`
+      : `${parttime.webName} is only expected to play about ${Math.round(parttime.expectedMinutes)} minutes, so he may not last the game.`;
   }
 
   // Early season, when every figure rests on a handful of matches. Said once,

@@ -101,10 +101,11 @@ supabase/migrations/  the same schema as ordered migrations; schema.sql is the
   `output_config: { format: zodOutputFormat(...) }`, adaptive thinking, and the
   system prompt frozen as a cache prefix. This SDK version has no
   `APIStatusError` — the classes are `APIError`, `InternalServerError`, etc.
-- **The `cache_control` on the system prompt is currently inert.** The prefix is
-  ~518 tokens and the minimum cacheable prefix is ~1024, so it silently does
-  nothing. Harmless, and it starts working if the system prompt grows past the
-  threshold — do not pad the prompt to chase it, the saving would be ~$0.002.
+- **The `cache_control` on the system prompt was inert and now is not.** The
+  prefix was ~518 tokens against a ~1,024 minimum, so it silently did nothing;
+  the prompt has since grown to ~1,740 and crossed the threshold without anyone
+  touching the cache config. Do not pad a prompt to chase this — the saving is
+  cents — but do not assume it is still dead either.
 - **A draft must never be written to `squads`.** That table is unique on
   (user_id, gameweek), so a draft stored there overwrites the real squad and the
   next page load restores moves nobody made. Saved drafts have their own table;
@@ -141,11 +142,27 @@ supabase/migrations/  the same schema as ordered migrations; schema.sql is the
 
 ## Cost
 
-Measured: ~1,920 input tokens per analysis, plus 2,000-4,000 output tokens
-including adaptive thinking. On `claude-opus-5` ($5/$25 per M) that is roughly
-**$0.06-0.11 per analysis** — about 12 analyses to the dollar.
+Measured 2026-11-20, on the first real `/api/analysis` call: **3,756 input
+tokens and 5,674 output** including adaptive thinking, in 87 seconds. On
+`claude-opus-5` ($5/$25 per M) that is **~$0.16 per analysis** — about six to
+the dollar.
 
-- One manager for a full 38-gameweek season: ~$3.
+That is roughly double the $0.06-0.11 this section claimed when it was an
+estimate, because both halves grew: the prompt now carries the draft verdict,
+the simulated odds, the price momentum, the plan and the captaincy
+distributions, and the schema asks for more fields than it did. Re-measure from
+the `[analyst]` log line rather than trusting this paragraph — it prints input,
+output and cache tokens on every paid call for exactly that reason.
+
+- One manager for a full 38-gameweek season: ~$6.
+- **87 seconds against a `maxDuration` of 120** is a thinner margin than it
+  looks. The prompt has grown every time the engine learned something new, and
+  output scales with it. If analyses start timing out, that is why — raise
+  `maxDuration`, or trim the prompt, before assuming the API is slow.
+- **The system-prompt cache is no longer inert.** It is ~1,740 tokens now, past
+  the ~1,024 minimum, so the `cache_control` on it has started working on its
+  own as the prompt grew. A first call can only write the cache, so that run
+  could not confirm a read; the log line will show it.
 - `/api/analysis` reuses a stored analysis per (squad, gameweek, horizon), so
   dashboard refreshes are free. Only a changed squad or `refresh: true` bills.
 - `ANTHROPIC_MODEL` overrides the model. `claude-haiku-4-5` costs ~$0.017 per
@@ -201,11 +218,23 @@ chip paths, and both composition rules refusing an illegal draft. RLS checked
 separately in psql with two users — neither can read, delete or forge the
 other's rows.
 
-**Not verified:** the Claude call. `/api/analysis` has still never executed
-against the real API, because every run of it costs money and nothing so far
-has needed one to prove a point. It is the one path written against the
-documented API and never run. `npm run dry-run` prints the exact prompt it
-would send, which is how the prompt changes since have been checked.
+**Verified 2026-11-20: the Claude call, finally.** `/api/analysis` ran against
+the real API for the first time and worked on the first attempt — structured
+output parsed, adaptive thinking on, 87s, ~$0.16. Nothing in this app is
+unexecuted code any more.
+
+What that run showed, beyond "it works": the analyst's plain verdict is
+genuinely better than the deterministic one, and in a specific way worth
+keeping in mind when tuning either. The engine can say a player is the
+likeliest to have a big week; the analyst said *why* — "Brighton play
+bottom-of-the-table Hull away, he plays almost the whole match every week". It
+also picked a better caution than the engine's rule did, flagging a rotating
+goalkeeper over a 55-minute midfielder, which is right for a reason the rule
+now encodes: a keeper who loses his place scores nothing, where an outfielder
+withdrawn at 55 has already banked most of his points.
+
+`npm run dry-run` still prints the exact prompt without spending anything, and
+remains the way to check a prompt change.
 
 **Not built** (deliberately deferred after the vertical slice): the standalone
 player-comparison tool, chip strategy beyond valuing each chip, price-rise
@@ -217,19 +246,16 @@ is a comparison tool for two players side by side.
 
 In rough priority order:
 
-1. **Run `/api/analysis` for real.** The one path never executed. `.env.local`
-   has a real `ANTHROPIC_API_KEY` now, so this is a decision to spend about ten
-   cents rather than a blocker. Set a spend limit in the Console first. The
-   draft, chip and odds figures all reach the prompt and none of that wording
-   has been read back by the model yet.
-2. **Price-change timing.** `fpl_player_snapshots` has been capturing daily
-   since August and nothing reads it for this: "he rises tonight, buy now" and
-   "waiting costs you 0.1 of his selling price" are both answerable from it,
-   and timing is half of a transfer decision.
-3. **Deploy to Vercel.** The remote exists and `main` is pushed. Needs the env
-   vars set in the Vercel project, and `supabase/schema.sql` applied to a
-   hosted Supabase project rather than the local one.
-4. Then the deferred features: a player-comparison screen, chip strategy,
+1. **Price-change timing, from history.** A draft already shows which way each
+   price is moving, read from live bootstrap fields. What it cannot say is
+   "waiting costs you 0.1 of his selling price", which needs
+   `fpl_player_snapshots` — and that table holds exactly one day, from the
+   single capture in August. The snapshot job has never run on a schedule, so
+   the first task is a schedule, not a model.
+2. **Deploy to Vercel.** The remote exists. Needs the env vars set in the
+   Vercel project, and `supabase/schema.sql` applied to a hosted Supabase
+   project rather than the local one.
+3. Then the deferred features: a player-comparison screen, chip strategy,
    price-rise prediction.
 
 Tune the projection maths with `npm run dry-run`, which costs nothing.

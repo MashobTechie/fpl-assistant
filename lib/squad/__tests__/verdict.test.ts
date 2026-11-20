@@ -314,3 +314,21 @@ test("a settled season with a clean eleven gets no caution at all", () => {
   });
   assert.equal(v.caution, null);
 });
+
+test("a rotating goalkeeper outranks a part-time outfielder as the caution", () => {
+  // Not the lowest minutes: the lowest consequence. A keeper who loses his
+  // place scores nothing, where a midfielder withdrawn at 55 has already
+  // banked his appearance points.
+  const keeper = {
+    ...starter(3, "Raya", { minutes: 50 }),
+    position: "GKP",
+  } as unknown as PlayerProjection;
+  const v = buildVerdict({
+    ...base,
+    optimal: optimal([starter(1, "Cherki", { minutes: 40 }), keeper]),
+    plan: plan(0, null),
+  });
+  assert.match(v.caution!, /Raya is not starting every week in goal/);
+  assert.ok(!v.caution!.includes("Cherki"));
+  assertPlain(v);
+});

@@ -121,6 +121,16 @@ export async function analyseGameweek(
       );
     }
 
+    // One line per paid call, because this is the only place the real cost of
+    // an analysis is visible. The figures in CLAUDE.md were measured once and
+    // would otherwise quietly drift as the prompt grows.
+    const u = response.usage;
+    console.log(
+      `[analyst] ${MODEL}: ${u.input_tokens} in, ${u.output_tokens} out, ` +
+        `cache ${u.cache_creation_input_tokens ?? 0} written / ` +
+        `${u.cache_read_input_tokens ?? 0} read`,
+    );
+
     const parsed = response.parsed_output;
     if (!parsed) {
       throw new AnalystError(
