@@ -104,6 +104,13 @@ async function main() {
 
   const resolved = await resolveSquad({ playerIds, transfers, chip });
 
+  // The first thing a manager reads, so the first thing printed.
+  console.log("=== WHAT TO DO ===");
+  console.log(`  ${resolved.verdict.action}`);
+  if (resolved.verdict.captain) console.log(`  ${resolved.verdict.captain}`);
+  if (resolved.verdict.caution) console.log(`  ${resolved.verdict.caution}`);
+  console.log(`  [${resolved.verdict.kind}]\n`);
+
   console.log(`GW${resolved.gameweek}, horizon ${resolved.horizon}`);
   console.log(`Optimal XI: ${resolved.optimal.formationLabel} — ${resolved.optimal.expectedPoints.toFixed(1)} xPts\n`);
   console.log("STARTING XI");

@@ -147,6 +147,27 @@ async function main() {
   );
   const gameweek: number = projected.body?.gameweek ?? 1;
 
+  // The decision, on the free half of the app. It is the first thing on the
+  // screen and the only thing most people read, so it must arrive with the
+  // numbers rather than with the paid analysis.
+  const verdict = projected.body?.verdict;
+  const spoken = [verdict?.action, verdict?.captain, verdict?.caution]
+    .filter(Boolean)
+    .join(" ");
+  const sentences = (spoken.match(/[.!?](?=\s|$)/g) ?? []).length;
+  check(
+    "projections carry a plain-English verdict",
+    typeof verdict?.action === "string" && verdict.action.length > 0,
+    verdict ? `[${verdict.kind}] ${verdict.action}` : "absent",
+  );
+  check(
+    "and it stays inside three sentences with no jargon",
+    sentences <= 3 &&
+      sentences >= 1 &&
+      !/xG|xPts|differential|fixture swing|ceiling|FDR/i.test(spoken),
+    `${sentences} sentence(s)`,
+  );
+
   // ---- the squad is persisted, which the cache key depends on ------------
   const reProjected = await call("/api/projections", {
     method: "POST",

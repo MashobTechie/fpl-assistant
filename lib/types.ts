@@ -64,6 +64,8 @@ export interface ProjectionsResponse {
   plan: TransferPlan;
   /** Captaincy shortlist with each candidate's simulated distribution. */
   captaincy: CaptaincyCandidate[];
+  /** The week's decision in plain words, free and instant. */
+  verdict: ResolvedSquad["verdict"];
   /** Bank, selling prices and club counts — what the sandbox prices moves with. */
   economics: SquadEconomics;
   /** Present when this squad is a draft of proposed transfers. */

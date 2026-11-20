@@ -22,6 +22,7 @@ import { LineupTable } from "./LineupTable";
 import { PlanPanel } from "./PlanPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { SavedDrafts } from "./SavedDrafts";
+import { VerdictPanel } from "./VerdictPanel";
 import { DraftVerdict } from "./DraftVerdict";
 import { PitchView } from "./PitchView";
 import { TransferSandbox, type Incoming } from "./TransferSandbox";
@@ -605,6 +606,14 @@ export function DashboardClient({
           </p>
         )}
       </Card>
+
+      {projections && !projections.draft && !sandbox && (
+        <VerdictPanel
+          verdict={projections.verdict}
+          analystVerdict={shownAnalysis?.plainVerdict ?? null}
+          gameweek={projections.gameweek}
+        />
+      )}
 
       {projections && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

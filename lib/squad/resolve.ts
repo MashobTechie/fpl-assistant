@@ -51,6 +51,7 @@ import {
   type TransferChip,
 } from "./draft";
 import { planTransfers, type TransferPlan } from "./planner";
+import { buildVerdict, type Verdict } from "./verdict";
 import { rankTransfers, type TransferCandidate } from "./transfers";
 import {
   squadCost,
@@ -138,6 +139,14 @@ export interface ResolvedSquad {
   transfers: TransferBudget;
   /** What each remaining chip is worth this gameweek. */
   chips: ChipValuation[];
+  /**
+   * The week's decision in plain words, from the figures above.
+   *
+   * Deterministic, so it costs nothing and arrives with the numbers rather
+   * than thirty seconds after them. The analyst writes a better one; this is
+   * the one that is always there.
+   */
+  verdict: Verdict;
   /** Last gameweek's result, when there is one and we know whose squad it was. */
   review: GameweekReview | null;
   playerIds: number[];
@@ -512,12 +521,34 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     ? played[Math.floor(played.length / 2)]
     : ctx.completedGameweeks;
 
+  const chips = valueChips(optimal, squad, gameweek, history, horizon);
+  const captaincy = captaincyCandidates(optimal.startingXI, gameweek);
+  const plan = planTransfers(
+    planSquad,
+    transferCandidates,
+    new Map(allProjections.map((p) => [p.playerId, p])),
+    planEconomics,
+    freeForPlan,
+    gameweek,
+    horizon,
+  );
+
   return {
     gameweek,
     matchesPlayed,
     horizon,
     transfers: budget,
-    chips: valueChips(optimal, squad, gameweek, history, horizon),
+    chips,
+    verdict: buildVerdict({
+      gameweek,
+      horizon,
+      matchesPlayed,
+      optimal,
+      captaincy,
+      plan,
+      chips,
+      transfers: budget,
+    }),
     review,
     managerName,
     teamName,
@@ -525,18 +556,10 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     squadValue,
     squad,
     optimal,
-    captaincy: captaincyCandidates(optimal.startingXI, gameweek),
+    captaincy,
     transferTargets: planTargets,
     transferCandidates,
-    plan: planTransfers(
-      planSquad,
-      transferCandidates,
-      new Map(allProjections.map((p) => [p.playerId, p])),
-      planEconomics,
-      freeForPlan,
-      gameweek,
-      horizon,
-    ),
+    plan,
     economics,
     draft,
     unaffordableTargets: planFunded.unaffordable,

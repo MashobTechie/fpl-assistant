@@ -62,6 +62,10 @@ export async function POST(request: Request) {
     // than behind a paid analyst call.
     review: resolved.review,
     chips: resolved.chips,
+    // The decision, in words. Deliberately on the free half: a verdict that
+    // only arrives with the paid analysis is missing for the thirty seconds
+    // that matter and absent entirely without an API key.
+    verdict: resolved.verdict,
     transfers: resolved.transfers,
     // Both computed on every request and previously visible only to the
     // analyst, so the one way to read your own plan was to pay for an LLM call

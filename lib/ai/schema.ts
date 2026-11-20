@@ -115,6 +115,33 @@ export const ChipAdviceSchema = z.object({
 });
 
 export const GameweekAnalysisSchema = z.object({
+  /**
+   * The whole analysis, for someone who does not play fantasy football.
+   *
+   * This is the first thing on the screen and for most people it is the only
+   * thing they read, so it carries the decision rather than a summary of the
+   * sections below. The engine produces a deterministic version of it for free,
+   * which is what shows until this arrives and whenever no analysis has been
+   * paid for; this one replaces it because it can weigh things the engine
+   * cannot see — a suspension rumour, a manager's press conference, the fact
+   * that two of the three ranked moves are the same bet.
+   *
+   * Three sentences is the ceiling, not the target. The third sentence is where
+   * summaries start hedging, and a reader who learns that the last sentence is
+   * filler stops reading all of them.
+   */
+  plainVerdict: z
+    .string()
+    .describe(
+      "At most three sentences, for someone who has never played fantasy football. " +
+        "First sentence: what to do before the deadline, stated as an instruction. " +
+        "Second: who to captain and why, in ordinary words. " +
+        "Third, ONLY if there is a real risk or something that would change the call — omit it otherwise. " +
+        "Absolutely no jargon: no differential, nailed, enabler, fixture swing, ceiling, floor, haul, xG, xGI, FDR, " +
+        "no talk of expected points or projections. Say who is playing well or badly, who is injured, " +
+        "and who has easy or hard games coming, the way you would explain it to a friend who does not play. " +
+        "Never hedge into uselessness: if the answer is to do nothing, say so plainly and confidently.",
+    ),
   headline: z
     .string()
     .describe("One sentence an FPL manager could act on immediately. No filler."),
