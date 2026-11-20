@@ -337,3 +337,59 @@ test("a real upgrade pays off more often than not, and the hit moves it", () => 
   // And the swing is real: a mean alone would not say this.
   assert.ok(free.odds.ceiling > free.odds.floor, "the draft should have a spread");
 });
+
+// ------------------------------------------------------------ price momentum
+//
+// Timing is half of a transfer decision, and these are the three figures FPL
+// publishes that bear on it. Carried through as facts: no forecast is made,
+// because FPL does not disclose how it decides overnight changes.
+
+test("a move carries which way each price is travelling", () => {
+  const rising = {
+    ...el(9, 4, 95),
+    cost_change_event: 1,
+    transfers_in_event: 500_000,
+    transfers_out_event: 20_000,
+    selected_by_percent: "42.3",
+  } as FplElement;
+  const falling = {
+    ...el(10, 4, 70),
+    cost_change_event: -2,
+    transfers_in_event: 5_000,
+    transfers_out_event: 300_000,
+    selected_by_percent: "8.1",
+  } as FplElement;
+
+  const r = applyDraft(
+    [10, 5],
+    [{ out: 10, in: 9 }],
+    new Map<number, FplElement>([
+      [9, rising],
+      [10, falling],
+      [5, el(5, 3, 70)],
+    ]),
+    team,
+    {},
+    5,
+  );
+
+  assert.deepEqual(r.moves[0].in.momentum, {
+    changeThisGameweek: 0.1,
+    netTransfers: 480_000,
+    ownership: 42.3,
+  });
+  assert.deepEqual(r.moves[0].out.momentum, {
+    changeThisGameweek: -0.2,
+    netTransfers: -295_000,
+    ownership: 8.1,
+  });
+});
+
+test("a player FPL reports nothing about reads as flat, not as missing", () => {
+  const r = applyDraft([1, 5], [{ out: 1, in: 2 }], elements, team, {}, 10);
+  assert.deepEqual(r.moves[0].in.momentum, {
+    changeThisGameweek: 0,
+    netTransfers: 0,
+    ownership: 0,
+  });
+});

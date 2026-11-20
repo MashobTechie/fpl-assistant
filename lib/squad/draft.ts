@@ -26,9 +26,64 @@ export interface DraftTransfer {
   in: number;
 }
 
+/**
+ * Which way a player's price is travelling, and what is pushing it.
+ *
+ * Facts, not a forecast. FPL's price-change algorithm is undisclosed: the
+ * community model is a net-transfer threshold that scales with ownership, and
+ * fitting one here would mean producing a confident number from a function
+ * nobody has. These are the three figures FPL publishes, which is enough for
+ * the decision the manager is actually making — buy him tonight or tomorrow.
+ *
+ * It matters in both directions. A player who is rising costs more tomorrow;
+ * a player who is falling raises less tomorrow, and the selling price is what
+ * funds the move.
+ */
+export interface PriceMomentum {
+  /** Price change so far this gameweek, £m. Positive is a rise. */
+  changeThisGameweek: number;
+  /** Net transfers this gameweek: in minus out, across all managers. */
+  netTransfers: number;
+  /** Ownership, percent — the denominator a rise threshold scales with. */
+  ownership: number;
+}
+
+export interface DraftPlayer {
+  playerId: number;
+  name: string;
+  position: string;
+  team: string;
+  price: number;
+  momentum: PriceMomentum;
+}
+
 export interface DraftMove {
-  out: { playerId: number; name: string; position: string; team: string; price: number };
-  in: { playerId: number; name: string; position: string; team: string; price: number };
+  out: DraftPlayer;
+  in: DraftPlayer;
+}
+
+/**
+ * A number FPL may not have sent.
+ *
+ * The bootstrap payload is trimmed to a field list before being cached in
+ * Postgres, so a payload written by an earlier build can be missing fields a
+ * later one reads — and these three were added to that list after the cache
+ * existed. Arithmetic on the gap produces NaN, which renders as "£NaNm" and
+ * is worse than reporting no movement at all.
+ */
+const finiteOrZero = (value: number | undefined | null): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+/** What FPL publishes about where a price is heading. */
+function momentumOf(element: FplElement): PriceMomentum {
+  return {
+    // FPL stores prices in tenths of a million, this field included.
+    changeThisGameweek: Math.round(finiteOrZero(element.cost_change_event)) / 10,
+    netTransfers:
+      finiteOrZero(element.transfers_in_event) -
+      finiteOrZero(element.transfers_out_event),
+    ownership: Number.parseFloat(element.selected_by_percent) || 0,
+  };
 }
 
 export class DraftError extends Error {
@@ -103,6 +158,7 @@ export function applyDraft(
         position: POSITION_NAME[outEl.element_type],
         team: teamName(outEl.team),
         price: sold,
+        momentum: momentumOf(outEl),
       },
       in: {
         playerId: t.in,
@@ -110,6 +166,7 @@ export function applyDraft(
         position: POSITION_NAME[inEl.element_type],
         team: teamName(inEl.team),
         price: bought,
+        momentum: momentumOf(inEl),
       },
     });
   }

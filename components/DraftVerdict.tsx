@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import type { DraftPlayer } from "@/lib/squad/draft";
 import {
   CHIP_WORTH_IT_POINTS,
   DRAFT_WORTH_IT_POINTS,
@@ -80,16 +81,21 @@ export function DraftVerdict({
         </p>
       )}
 
-      <ul className="mb-4 flex flex-col gap-1.5">
+      <ul className="mb-4 flex flex-col gap-2">
         {draft.moves.map((m) => (
-          <li key={m.out.playerId} className="flex flex-wrap items-baseline gap-x-2 text-sm">
-            <span className="text-[--color-pink]">{m.out.name}</span>
-            <span className="text-[11px] text-[--color-ink-faint]">£{m.out.price.toFixed(1)}m</span>
-            <span className="text-[--color-ink-faint]">→</span>
-            <span className="font-semibold text-[--color-accent]">{m.in.name}</span>
-            <span className="text-[11px] text-[--color-ink-faint]">
-              {m.in.team} · £{m.in.price.toFixed(1)}m
+          <li key={m.out.playerId} className="text-sm">
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[--color-pink]">{m.out.name}</span>
+              <span className="text-[11px] text-[--color-ink-faint]">
+                £{m.out.price.toFixed(1)}m
+              </span>
+              <span className="text-[--color-ink-faint]">→</span>
+              <span className="font-semibold text-[--color-accent]">{m.in.name}</span>
+              <span className="text-[11px] text-[--color-ink-faint]">
+                {m.in.team} · £{m.in.price.toFixed(1)}m
+              </span>
             </span>
+            <Timing out={m.out} in={m.in} />
           </li>
         ))}
       </ul>
@@ -343,4 +349,61 @@ function Odds({
       </span>
     </div>
   );
+}
+
+/**
+ * Whether tonight or tomorrow is the better time to make the move.
+ *
+ * Deliberately not a prediction. FPL does not publish its price-change
+ * algorithm, so a probability here would be a confident number from an unknown
+ * function — the one thing this app exists not to do. What it shows is the
+ * direction of travel and the transfer flow pushing it, which is what the
+ * decision actually turns on, and leaves the call to the manager.
+ *
+ * Both sides matter, for different reasons: a rising player costs more
+ * tomorrow, and a falling one raises less tomorrow, which is the money that
+ * funds the move.
+ */
+function Timing({ out, in: incoming }: { out: DraftPlayer; in: DraftPlayer }) {
+  const notes: string[] = [];
+
+  if (incoming.momentum.changeThisGameweek > 0) {
+    notes.push(
+      `${incoming.name} is up £${incoming.momentum.changeThisGameweek.toFixed(1)}m this gameweek` +
+        `${netPhrase(incoming.momentum.netTransfers)} — he may cost more tomorrow`,
+    );
+  } else if (incoming.momentum.netTransfers > 100_000) {
+    notes.push(
+      `${incoming.name} is being bought heavily${netPhrase(incoming.momentum.netTransfers)}`,
+    );
+  }
+
+  if (out.momentum.changeThisGameweek < 0) {
+    notes.push(
+      `${out.name} is down £${Math.abs(out.momentum.changeThisGameweek).toFixed(1)}m this gameweek — ` +
+        "waiting may raise less for him",
+    );
+  } else if (out.momentum.netTransfers < -100_000) {
+    notes.push(`${out.name} is being sold heavily${netPhrase(out.momentum.netTransfers)}`);
+  }
+
+  if (notes.length === 0) return null;
+
+  return (
+    <span className="mt-0.5 block text-[11px] leading-relaxed text-[--color-cyan]">
+      {notes.join(". ")}. Prices change overnight and FPL does not publish how
+      it decides, so this is the direction of travel, not a forecast.
+    </span>
+  );
+}
+
+/** Transfer counts read better rounded: nobody acts on the last hundred. */
+function netPhrase(net: number): string {
+  const magnitude = Math.abs(net);
+  if (magnitude < 10_000) return "";
+  const rounded =
+    magnitude >= 1_000_000
+      ? `${(magnitude / 1_000_000).toFixed(1)}m`
+      : `${Math.round(magnitude / 1000)}k`;
+  return ` (${net > 0 ? "+" : "−"}${rounded} net transfers)`;
 }

@@ -164,12 +164,19 @@ npm run dev                   # http://localhost:3000
 npm run build && npm run lint && npm run typecheck
 npm test                      # unit tests: the maths and the transfer rules
 npm run dry-run               # live FPL data -> projections -> the Claude prompt, no API call
+npm run dry-run -- --draft    # the same, with a draft, so the verdict half of the prompt prints
+npm run dry-run -- --draft --freehit   # or --wildcard, for the chip wording
 npm run smoke                 # the real HTTP routes, signed in, against local Supabase
 npm run validate:projections <bootstrap.json> <fixtures.json>
 ```
 
 `dry-run` is the fastest way to check a projection change: it prints the optimal
-XI and the exact prompt without spending an API call.
+XI and the exact prompt without spending an API call. `--draft` builds a
+realistic move out of the engine's own funded-target list — which matters,
+because a draft picked by price alone swaps two benched players and leaves the
+whole verdict unchanged — and prints the draft section of the prompt. That
+section is otherwise unreachable without spending a call, and it is where the
+odds, the price momentum and the chip wording live.
 
 `smoke` is the fastest way to check anything Supabase-backed. It needs
 `npx supabase start` and `npm run dev` running, creates a throwaway user,

@@ -450,7 +450,11 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
       moves: draftMoves,
       freeTransfers: budget.free,
       hitCost,
-      bankAfter: bank ?? 0,
+      // The one authoritative post-draft figure, so the verdict cannot
+      // disagree with the budget shown beside it. Reading the raw `bank`
+      // reported £0.0m for a manual squad, whose bank is deliberately left
+      // null so economics recomputes it from what the £100m leaves.
+      bankAfter: economics.bank,
       comparison: compareDraft(baseline, squad, gameweek, horizon, hitCost, chip),
       baselineIds,
       chip,

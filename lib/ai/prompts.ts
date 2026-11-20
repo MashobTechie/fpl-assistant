@@ -11,6 +11,7 @@ import type { ChipValuation, TransferBudget } from "@/lib/squad/chips";
 import type { SquadEconomics } from "@/lib/squad/economics";
 import type { CaptaincyCandidate } from "@/lib/squad/optimizer";
 import type { TransferPlan } from "@/lib/squad/planner";
+import type { DraftMove } from "@/lib/squad/draft";
 import type { TransferCandidate } from "@/lib/squad/transfers";
 import type { GameweekReview } from "@/lib/squad/review";
 import type { OptimisedSquad } from "@/lib/squad/optimizer";
@@ -156,6 +157,13 @@ function draftSection(req: AnalysisRequest): string {
     : d.hitCost
       ? `-${d.hitCost} points`
       : "none";
+  // "after the hit" is a lie when there is no hit to have taken off, and the
+  // manual case is exactly where the analyst must not imply one was counted.
+  const netBasis = d.hitUnknown
+    ? "before any hit"
+    : d.hitCost
+      ? "after the hit"
+      : "with no hit to take off";
   // A chip changes what the figures mean, so it is stated with them rather
   // than left for the analyst to infer from a hit of zero.
   const chipLine = d.chip
@@ -169,18 +177,38 @@ function draftSection(req: AnalysisRequest): string {
   const horizonNote = c.revertsNextWeek
     ? `\nA Free Hit lasts one gameweek: the horizon figure above is scored on the squad they keep from next gameweek, so judge it on the GW${req.gameweek} figure alone. The plan and the ranked swaps below are computed on that kept squad rather than on the drafted fifteen, since the drafted fifteen is handed back — so they are advice for after the chip, not for it.`
     : "";
+  // Price momentum, as facts rather than a forecast. FPL does not publish how
+  // it decides overnight changes, so the analyst is given the direction of
+  // travel and told not to predict the change itself.
+  const momentum = (p: DraftMove["in"]) => {
+    const parts: string[] = [];
+    if (p.momentum.changeThisGameweek !== 0) {
+      parts.push(
+        `price ${p.momentum.changeThisGameweek > 0 ? "up" : "down"} £${Math.abs(p.momentum.changeThisGameweek).toFixed(1)}m this GW`,
+      );
+    }
+    if (Math.abs(p.momentum.netTransfers) >= 10000) {
+      parts.push(
+        `${p.momentum.netTransfers > 0 ? "+" : ""}${p.momentum.netTransfers} net transfers`,
+      );
+    }
+    if (p.momentum.ownership > 0) parts.push(`${p.momentum.ownership}% owned`);
+    return parts.length ? ` [${parts.join(", ")}]` : "";
+  };
   const moves = d.moves
     .map(
       (m) =>
-        `OUT ${m.out.name} (${m.out.team}, sells £${m.out.price.toFixed(1)}m) -> IN ${m.in.name} (${m.in.team}, costs £${m.in.price.toFixed(1)}m)`,
+        `OUT ${m.out.name} (${m.out.team}, sells £${m.out.price.toFixed(1)}m)${momentum(m.out)} -> ` +
+        `IN ${m.in.name} (${m.in.team}, costs £${m.in.price.toFixed(1)}m)${momentum(m.in)}`,
     )
     .join("\n");
   return `=== THE MANAGER'S PROPOSED TRANSFERS ===
 The squad above already includes these moves. They asked whether to make them.
 ${moves}
 Transfers: ${d.moves.length}, free transfers available: ${d.hitUnknown ? "UNKNOWN" : d.freeTransfers}, hit: ${hitPhrase}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.${chipLine}
-Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit. Both totals count the armband on the best player, as FPL scores it.
-Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.${horizonNote}
+Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} ${netBasis}. Both totals count the armband on the best player, as FPL scores it.
+Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} ${netBasis}.${horizonNote}
+Price momentum above is published fact, not a forecast: FPL does not disclose how it decides overnight price changes, so you may say a player is rising or being bought heavily and must not state or imply a probability that he changes tonight.
 Simulated: these moves come out ahead in ${Math.round(c.odds.paysOff * 100)}% of this gameweek's outcomes, and the middle 80% of them run from ${sign(c.odds.floor)} to ${sign(c.odds.ceiling)}. A small mean gain that lands less than half the time is a reason to hold the transfer, not to make it; a small gain that lands four weeks in five is worth taking. Say which of those this is.
 
 `;

@@ -268,6 +268,19 @@ async function main() {
     odds ? `${Math.round(odds.paysOff * 100)}%, swing ${odds.floor} to ${odds.ceiling}` : "absent",
   );
 
+  // Timing: which way each price is travelling, carried from live FPL data.
+  const move = manualDraft.body?.draft?.moves?.[0];
+  check(
+    "each move carries its price momentum",
+    typeof move?.in?.momentum?.changeThisGameweek === "number" &&
+      Number.isFinite(move.in.momentum.changeThisGameweek) &&
+      Number.isFinite(move.in.momentum.netTransfers) &&
+      Number.isFinite(move.out.momentum.ownership),
+    move
+      ? `in: ${move.in.momentum.changeThisGameweek}m, ${move.in.momentum.netTransfers} net, ${move.in.momentum.ownership}% owned`
+      : "absent",
+  );
+
   // A Free Hit hands the squad back after one gameweek, so the plan beside
   // the verdict has to describe the squad they keep. The tell is the plan's
   // do-nothing total: on a Free Hit it must match the undrafted squad's, and

@@ -72,7 +72,37 @@ async function main() {
     `Template squad: ${playerIds.length} players, £${(total() / 10).toFixed(1)}m\n`,
   );
 
-  const resolved = await resolveSquad({ playerIds });
+  // `--draft` exercises the transfer-sandbox half of the prompt, which is
+  // otherwise unreachable without spending an API call: the draft verdict, the
+  // simulated odds, the price-momentum facts and the chip wording all live in
+  // a section that only appears when moves are proposed.
+  const wantsDraft = process.argv.includes("--draft");
+  const chipArg = process.argv.find((a) => a === "--wildcard" || a === "--freehit");
+  const chip = chipArg === "--wildcard" ? "wildcard" : chipArg === "--freehit" ? "freehit" : undefined;
+
+  // The engine's own funded-target list is the right source for a realistic
+  // draft: it already knows which incoming players this squad can pay for and
+  // who would have to be sold to pay for them. Picking a swap by price instead
+  // produced a move between two benched players, where the best XI — and so
+  // the whole verdict — was unchanged.
+  let transfers: { out: number; in: number }[] | undefined;
+  if (wantsDraft) {
+    const plain = await resolveSquad({ playerIds });
+    const target = plain.transferTargets.find((t) => t.fundedBy.length > 0 && !t.clubFull);
+    if (target) {
+      const seller = target.fundedBy[0];
+      transfers = [{ out: seller.playerId, in: target.player.playerId }];
+      console.log(
+        `Draft: OUT ${seller.name} £${seller.sellPrice.toFixed(1)}m -> ` +
+          `IN ${target.player.webName} £${target.player.cost.toFixed(1)}m` +
+          `${chip ? ` on a ${chip}` : ""}\n`,
+      );
+    } else {
+      console.log("Draft: nothing in the squad could fund a target, skipping.\n");
+    }
+  }
+
+  const resolved = await resolveSquad({ playerIds, transfers, chip });
 
   console.log(`GW${resolved.gameweek}, horizon ${resolved.horizon}`);
   console.log(`Optimal XI: ${resolved.optimal.formationLabel} — ${resolved.optimal.expectedPoints.toFixed(1)} xPts\n`);
@@ -85,6 +115,20 @@ async function main() {
     console.log(`  ${p.position} ${p.webName.padEnd(15)} ${p.team.padEnd(4)} ${p.nextGameweekPoints.toFixed(2).padStart(5)} xPts`);
   }
   console.log(`\nTransfer targets offered: ${resolved.transferTargets.length}`);
+
+  if (resolved.draft) {
+    const c = resolved.draft.comparison;
+    console.log("\nDRAFT VERDICT");
+    console.log(`  this week ${c.thisWeek.before} -> ${c.thisWeek.after} (net ${c.netThisWeek})`);
+    console.log(`  horizon   ${c.horizon.before} -> ${c.horizon.after} (net ${c.netHorizon})`);
+    console.log(
+      `  pays off ${Math.round(c.odds.paysOff * 100)}% — middle 80%: ${c.odds.floor} to ${c.odds.ceiling}`,
+    );
+    console.log(
+      `  hit ${resolved.draft.hitUnknown ? "unknown (manual squad)" : resolved.draft.hitCost}` +
+        `${c.revertsNextWeek ? ", squad reverts next week" : ""}`,
+    );
+  }
 
   const prompt = buildAnalysisPrompt({
     gameweek: resolved.gameweek,
@@ -107,6 +151,20 @@ async function main() {
 
   const chars = ANALYST_SYSTEM_PROMPT.length + prompt.length;
   console.log(`\nPrompt size: ~${Math.round(chars / 4)} tokens (${chars} chars)`);
+  // The draft section leads the prompt when there is one, so printing the
+  // head of it is printing exactly the part under test.
+  if (resolved.draft) {
+    // Print the draft section itself rather than the head of the prompt: it
+    // sits between the squad and the plan, and it is the part under test.
+    const start = prompt.indexOf("=== THE MANAGER'S PROPOSED TRANSFERS ===");
+    console.log("\n=== DRAFT SECTION OF THE PROMPT ===\n");
+    console.log(
+      start >= 0
+        ? prompt.slice(start, prompt.indexOf("=== BEST MULTI-WEEK PLAN", start))
+        : "(the draft section is missing from the prompt — that is a bug)",
+    );
+  }
+
   console.log("\n=== USER PROMPT (first 2200 chars) ===\n");
   console.log(prompt.slice(0, 2200));
 }
