@@ -21,6 +21,7 @@ import {
 import { transferBudget, valueChips, type ChipValuation, type TransferBudget } from "./chips";
 import { reviewGameweek, type GameweekReview } from "./review";
 import { readPlayerHistory } from "@/lib/fpl/store";
+import { SQUAD_BUDGET } from "@/lib/types";
 import type { FplElement } from "@/lib/fpl/types";
 import {
   buildContext,
@@ -112,6 +113,16 @@ export interface ResolvedSquad {
     baselineIds: number[];
     /** The chip played with these transfers, which makes them free. */
     chip: TransferChip | null;
+    /**
+     * True when there is no way to know what these moves cost in points.
+     *
+     * The free-transfer count is reconstructed from a manager's public FPL
+     * history, and a manually built squad has none — there is no entry to read.
+     * Reporting a -4 on a guess would be inventing the most consequential
+     * number on the screen, and reporting 0 silently would be worse, so the
+     * figure is withheld and labelled instead.
+     */
+    hitUnknown: boolean;
     /**
      * Set when the public history says this chip has already been played.
      * A warning rather than a refusal: FPL now grants a second set of chips
@@ -228,15 +239,6 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     );
   }
 
-  if (opts.transfers?.length && !opts.entryId) {
-    // A manual squad has no FPL position to transfer from — its picks are
-    // simply edited, and priced against the £100m budget like any other.
-    throw new SquadResolutionError(
-      "Transfers can only be tried on a squad imported from FPL.",
-      "invalid_draft",
-    );
-  }
-
   if (opts.playerIds?.length) {
     const problems = validateSquadIds(opts.playerIds);
     if (problems.length > 0) {
@@ -287,43 +289,67 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
       }
     }
 
-    if (opts.transfers?.length) {
-      // Transfers only mean anything for a deadline that has not passed.
-      const next = resolveTargetGameweek(bootstrap);
-      if (gameweek !== next) {
-        throw new SquadResolutionError(
-          `Gameweek ${gameweek} is already locked. Transfers can only be planned for gameweek ${next}.`,
-          "invalid_draft",
-        );
-      }
-      baselineIds = playerIds;
-      const teams = new Map(bootstrap.teams.map((t) => [t.id, t.short_name]));
-      try {
-        const applied = applyDraft(
-          playerIds,
-          opts.transfers,
-          elementsById,
-          (id) => teams.get(id) ?? "???",
-          sellPrices,
-          bank,
-        );
-        playerIds = applied.playerIds;
-        bank = applied.bank;
-        draftMoves = applied.moves;
-        for (const k of Object.keys(sellPrices)) delete sellPrices[Number(k)];
-        Object.assign(sellPrices, applied.sellPrices);
-      } catch (err) {
-        if (err instanceof DraftError) {
-          throw new SquadResolutionError(err.message, "invalid_draft");
-        }
-        throw err;
-      }
-    }
   } else {
     throw new SquadResolutionError(
       "Provide either an FPL team ID or a manual squad.",
       "invalid_squad",
     );
+  }
+
+  if (opts.transfers?.length) {
+    // Transfers only mean anything for a deadline that has not passed.
+    const next = resolveTargetGameweek(bootstrap);
+    if (gameweek !== next) {
+      throw new SquadResolutionError(
+        `Gameweek ${gameweek} is already locked. Transfers can only be planned for gameweek ${next}.`,
+        "invalid_draft",
+      );
+    }
+    baselineIds = playerIds;
+    const teams = new Map(bootstrap.teams.map((t) => [t.id, t.short_name]));
+    // An imported squad transfers from its real position: FPL's own bank, and
+    // selling prices that return only half of any rise. A manual fifteen has
+    // neither, so it is priced the way it was assembled — at today's market
+    // value, against what is left of the £100m. The two are genuinely
+    // different sums and conflating them is what made the imported case wrong
+    // before: a draft priced at market value approves moves FPL refuses.
+    let draftBank: number;
+    if (manual) {
+      const spent = playerIds.reduce(
+        (total, id) => total + (elementsById.get(id)?.now_cost ?? 0) / 10,
+        0,
+      );
+      draftBank = Math.round((SQUAD_BUDGET - spent) * 10) / 10;
+    } else if (bank === null) {
+      // Unreachable for a squad imported from FPL, which always reports its
+      // bank. Guessing one would price every move wrong in the same direction.
+      throw new SquadResolutionError(
+        "FPL did not report this team's bank, so a transfer cannot be priced.",
+        "invalid_draft",
+      );
+    } else {
+      draftBank = bank;
+    }
+    try {
+      const applied = applyDraft(
+        playerIds,
+        opts.transfers,
+        elementsById,
+        (id) => teams.get(id) ?? "???",
+        sellPrices,
+        draftBank,
+      );
+      playerIds = applied.playerIds;
+      if (!manual) bank = applied.bank;
+      draftMoves = applied.moves;
+      for (const k of Object.keys(sellPrices)) delete sellPrices[Number(k)];
+      Object.assign(sellPrices, applied.sellPrices);
+    } catch (err) {
+      if (err instanceof DraftError) {
+        throw new SquadResolutionError(err.message, "invalid_draft");
+      }
+      throw err;
+    }
   }
 
   const squad = playerIds.map((id) => {
@@ -403,12 +429,13 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let freeForPlan = budget.free;
   if (baselineIds && draftMoves.length > 0) {
     const chip = opts.chip ?? null;
-    const hitCost = draftHitCost(
-      draftMoves.length,
-      budget.free,
-      budget.hitCost,
-      chip,
-    );
+    // A manual squad has no history to read a free-transfer count from, so
+    // there is no honest hit to charge. Before the first deadline there is
+    // genuinely no limit either, which is the case this unblocks.
+    const hitUnknown = manual && !chip;
+    const hitCost = hitUnknown
+      ? 0
+      : draftHitCost(draftMoves.length, budget.free, budget.hitCost, chip);
     const baseline = baselineIds.map((id) =>
       projectPlayer(elementsById.get(id)!, ctx, gameweek, horizon),
     );
@@ -421,6 +448,7 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
       comparison: compareDraft(baseline, squad, gameweek, horizon, hitCost, chip),
       baselineIds,
       chip,
+      hitUnknown,
       chipWarning:
         chip && played.has(chip)
           ? `Your history shows a ${chip === "wildcard" ? "Wildcard" : "Free Hit"} ` +

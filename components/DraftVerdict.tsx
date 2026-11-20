@@ -66,9 +66,11 @@ export function DraftVerdict({
           the real app
           {draft.chip
             ? ` with no hit — your ${chipLabel} covers all ${draft.moves.length}.`
-            : draft.hitCost > 0
-              ? `, for a −${draft.hitCost} hit.`
-              : " with no hit."}
+            : draft.hitUnknown
+              ? ", if you have the transfers for it."
+              : draft.hitCost > 0
+                ? `, for a −${draft.hitCost} hit.`
+                : " with no hit."}
         </span>
       </p>
 
@@ -110,8 +112,22 @@ export function DraftVerdict({
         />
         <StatTile
           label={draft.chip ? "Chip" : "Hit"}
-          value={draft.chip ? chipLabel : draft.hitCost ? `−${draft.hitCost}` : "0"}
-          sub={draft.chip ? "no hit, limit suspended" : `${draft.freeTransfers} free`}
+          value={
+            draft.chip
+              ? chipLabel
+              : draft.hitUnknown
+                ? "—"
+                : draft.hitCost
+                  ? `−${draft.hitCost}`
+                  : "0"
+          }
+          sub={
+            draft.chip
+              ? "no hit, limit suspended"
+              : draft.hitUnknown
+                ? "we can't see your transfers"
+                : `${draft.freeTransfers} free`
+          }
         />
         <StatTile label="Bank after" value={`£${draft.bankAfter.toFixed(1)}m`} />
       </div>
@@ -126,7 +142,7 @@ export function DraftVerdict({
         }`}
       >
         {worth
-          ? `Worth doing on the numbers: ${sign(decisive)} over ${over}${draft.chip ? "" : " after any hit"}.`
+          ? `Worth doing on the numbers: ${sign(decisive)} over ${over}${draft.chip || draft.hitUnknown ? "" : " after any hit"}.`
           : marginal
             ? draft.chip
               ? `${sign(decisive)} over ${over} — short of the ${bar} points a ${chipLabel} should earn. There are two in a season; hold it for a week that needs one.`
@@ -138,6 +154,16 @@ export function DraftVerdict({
       </p>
 
       {save && <SaveDraft draft={draft} save={save} />}
+
+      {draft.hitUnknown && (
+        <p className="mt-3 text-xs leading-relaxed text-[--color-ink-faint]">
+          This squad was built here rather than imported, so there is no FPL
+          history to read a free-transfer count from. The figures above are the
+          points change before any hit — if these moves cost you one, subtract
+          4 for each transfer beyond your free ones. Import by FPL ID and the
+          hit is counted for you.
+        </p>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-3">
         <button

@@ -19,8 +19,14 @@
 
 export interface DraftSession {
   gameweek: number;
-  /** The FPL id the draft was built against. A draft is not portable. */
-  entryId: number;
+  /**
+   * The squad the swaps were priced against — an FPL id, or the fifteen
+   * themselves for a manually built squad. A draft is not portable between
+   * squads: re-applying it to a different one is how a restore turns into
+   * moves the manager never proposed.
+   */
+  entryId: number | null;
+  playerIds: number[] | null;
   transfers: { out: number; in: number }[];
   chip: "wildcard" | "freehit" | null;
 }
@@ -65,8 +71,17 @@ export function recallDraft(): DraftSession | null {
     if (typeof value !== "object" || value === null) return null;
     const d = value as Record<string, unknown>;
 
-    if (!Number.isInteger(d.gameweek) || !Number.isInteger(d.entryId)) return null;
+    if (!Number.isInteger(d.gameweek)) return null;
     if (!Array.isArray(d.transfers) || d.transfers.length === 0) return null;
+
+    const entryId = Number.isInteger(d.entryId) ? (d.entryId as number) : null;
+    const playerIds =
+      Array.isArray(d.playerIds) && d.playerIds.every((id) => Number.isInteger(id))
+        ? (d.playerIds as number[])
+        : null;
+    // One or the other, never neither: a draft with nothing to re-price
+    // against cannot be restored.
+    if (entryId === null && playerIds === null) return null;
 
     const transfers: { out: number; in: number }[] = [];
     for (const t of d.transfers) {
@@ -79,12 +94,7 @@ export function recallDraft(): DraftSession | null {
     const chip =
       d.chip === "wildcard" || d.chip === "freehit" ? d.chip : null;
 
-    return {
-      gameweek: d.gameweek as number,
-      entryId: d.entryId as number,
-      transfers,
-      chip,
-    };
+    return { gameweek: d.gameweek as number, entryId, playerIds, transfers, chip };
   } catch {
     return null;
   }

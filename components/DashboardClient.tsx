@@ -174,12 +174,13 @@ export function DashboardClient({
         // Re-checked rather than restored from storage: the stored thing is
         // the question, and the answer has to come from today's prices.
         const kept = recallDraft();
-        if (
+        const sameSquad =
           kept &&
-          kept.gameweek === (data as ProjectionsResponse).gameweek &&
-          entryId &&
-          kept.entryId === Number(entryId)
-        ) {
+          (entryId
+            ? kept.entryId === Number(entryId)
+            : kept.playerIds?.length === savedPicks.length &&
+              kept.playerIds.every((id) => savedPicks.includes(id)));
+        if (kept && sameSquad && kept.gameweek === (data as ProjectionsResponse).gameweek) {
           void checkDraft(kept.transfers, kept.chip, { silent: true });
         }
       } catch {
@@ -201,14 +202,9 @@ export function DashboardClient({
 
   // ---- Saved drafts -------------------------------------------------------
 
-  /**
-   * The drafts kept for this gameweek.
-   *
-   * Only ever for an imported squad: a draft is swaps against a real bank and
-   * real selling prices, and a manual fifteen has neither.
-   */
+  /** The drafts kept for this gameweek, for either kind of squad. */
   async function loadSavedDrafts(gw: number | null) {
-    if (!entryId || gw === null) return;
+    if (gw === null) return;
     try {
       const res = await fetch(`/api/drafts?gameweek=${gw}`);
       if (!res.ok) return;
@@ -224,7 +220,7 @@ export function DashboardClient({
   // rendered, so there is no stale state to wipe and nothing to set before the
   // request comes back.
   useEffect(() => {
-    if (!entryId || gameweek === null) return;
+    if (gameweek === null) return;
     let cancelled = false;
     (async () => {
       try {
@@ -241,9 +237,9 @@ export function DashboardClient({
     };
   }, [gameweek, entryId]);
 
-  /** Keep the draft on screen under a name, so it survives the session. */
+  /** Keep the draft on screen under a name, so it outlives the session. */
   async function saveDraft(name: string) {
-    if (!draftMoves || !entryId || gameweek === null) return;
+    if (!draftMoves || gameweek === null) return;
     setSavingDraft(true);
     setSaveDraftError(null);
     try {
@@ -255,7 +251,9 @@ export function DashboardClient({
           name,
           transfers: draftMoves,
           chip: draftChip,
-          entryId: Number(entryId),
+          // Recorded when there is one, so a draft can be told apart from one
+          // built against a different team. A manual squad simply has none.
+          entryId: entryId ? Number(entryId) : null,
         }),
       });
       const data = await res.json();
@@ -352,13 +350,18 @@ export function DashboardClient({
      */
     opts: { analyse?: boolean; silent?: boolean } = {},
   ): Promise<boolean> {
-    if (!entryId) return false;
     const { analyse = false, silent = false } = opts;
+    // The real squad, not the one on screen: `projections` is the draft while
+    // one is open, and swaps re-applied to a draft would compound.
+    const real = baseline ?? projections;
+    const squad = squadBody(real?.squad.map((p) => p.playerId));
+    if (!squad) return false;
+
     setCheckingDraft(true);
     setDraftError(null);
     try {
       const body = {
-        entryId: Number(entryId),
+        ...squad,
         transfers,
         ...(chip ? { chip } : {}),
         ...(gameweek !== null ? { gameweek } : {}),
@@ -387,16 +390,13 @@ export function DashboardClient({
       // is why the restore above re-checks rather than redisplaying.
       rememberDraft({
         gameweek: (data as ProjectionsResponse).gameweek,
-        entryId: Number(entryId),
+        entryId: "entryId" in squad ? (squad.entryId as number) : null,
+        playerIds: "playerIds" in squad ? (squad.playerIds as number[]) : null,
         transfers,
         chip,
       });
       if (analyse) {
-        void runAnalysis({
-          entryId: Number(entryId),
-          transfers,
-          ...(chip ? { chip } : {}),
-        });
+        void runAnalysis({ ...squad, transfers, ...(chip ? { chip } : {}) });
       }
       return true;
     } catch {
@@ -423,15 +423,21 @@ export function DashboardClient({
   }
 
   /**
-   * Whether transfers can be tried at all: an imported squad has the real bank
-   * and selling prices to check against, a manual one does not, and a locked
-   * gameweek has no deadline left to transfer for. Computed once because two
-   * places offer the sandbox, and a gate enforced in one of them is not a gate.
+   * Whether transfers can be tried at all.
+   *
+   * Both kinds of squad can be, now that they are priced differently rather
+   * than one of them being refused: an imported squad against FPL's own bank
+   * and selling prices, a manual one against what is left of the £100m. What
+   * it still needs is a squad on screen and a deadline that has not passed —
+   * a locked gameweek has nothing left to transfer for.
+   *
+   * Computed once because several places offer the sandbox, and a gate
+   * enforced in one of them is not a gate.
    */
   const canDraft =
-    mode === "import" &&
-    Boolean(entryId) &&
+    Boolean(projections) &&
     !projections?.draft &&
+    (mode === "import" ? Boolean(entryId) : Boolean(projections?.squad.length)) &&
     (liveGameweek === null || gameweek !== liveGameweek);
 
   /** Open the sandbox with a move already on the pitch. */
@@ -636,10 +642,10 @@ export function DashboardClient({
           horizon={projections.horizon}
           onBack={leaveDraft}
           onEdit={editDraft}
-          // Keeping it needs somewhere to hang it from: the FPL id the swaps
-          // were priced against, and the gameweek they were proposed for.
+          // Keeping it needs a gameweek to file it under; the FPL id is
+          // recorded when there is one but a manual draft saves without.
           save={
-            entryId && gameweek !== null
+            gameweek !== null
               ? {
                   onSave: (name) => void saveDraft(name),
                   saving: savingDraft,

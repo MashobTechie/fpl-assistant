@@ -148,6 +148,14 @@ function draftSection(req: AnalysisRequest): string {
   if (!d) return "";
   const c = d.comparison;
   const sign = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+  // A manually built squad has no FPL history, so its free-transfer count is
+  // not merely uncertain but unavailable. Said plainly, because a hit of
+  // "none" would otherwise read as a fact and the analyst would advise on it.
+  const hitPhrase = d.hitUnknown
+    ? "NOT KNOWN — this squad was built in the app, not imported, so there is no history to read a free-transfer count from. Do not state a hit as fact; say the net figures are before any hit and that importing by FPL ID would settle it"
+    : d.hitCost
+      ? `-${d.hitCost} points`
+      : "none";
   // A chip changes what the figures mean, so it is stated with them rather
   // than left for the analyst to infer from a hit of zero.
   const chipLine = d.chip
@@ -170,7 +178,7 @@ function draftSection(req: AnalysisRequest): string {
   return `=== THE MANAGER'S PROPOSED TRANSFERS ===
 The squad above already includes these moves. They asked whether to make them.
 ${moves}
-Transfers: ${d.moves.length}, free transfers available: ${d.freeTransfers}, hit: ${d.hitCost ? `-${d.hitCost} points` : "none"}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.${chipLine}
+Transfers: ${d.moves.length}, free transfers available: ${d.hitUnknown ? "UNKNOWN" : d.freeTransfers}, hit: ${hitPhrase}. Bank afterwards: £${d.bankAfter.toFixed(1)}m.${chipLine}
 Best XI this gameweek: ${c.thisWeek.before} before, ${c.thisWeek.after} after — net ${sign(c.netThisWeek)} after the hit. Both totals count the armband on the best player, as FPL scores it.
 Best XI across ${req.horizon} gameweeks: ${c.horizon.before} before, ${c.horizon.after} after — net ${sign(c.netHorizon)} after the hit.${horizonNote}
 

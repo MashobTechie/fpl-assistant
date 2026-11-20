@@ -213,23 +213,134 @@ async function main() {
     deleted.status === 200 && afterDelete.body?.drafts?.length === 0,
   );
 
-  // ---- a draft needs an imported squad ----------------------------------
+  // ---- drafts on a manual squad ------------------------------------------
+  // Priced against what is left of the £100m rather than an FPL bank, and
+  // reported with the hit withheld: there is no history to read a
+  // free-transfer count from, and guessing one invents the most consequential
+  // number on the screen.
+  const swapIn = await affordableSwap(squad);
   const manualDraft = await call("/api/projections", {
     method: "POST",
     body: JSON.stringify({
       playerIds: squad,
-      transfers: [{ out: squad[0], in: squad[1] }],
+      transfers: [{ out: squad[14], in: swapIn }],
     }),
   });
   check(
-    "transfers are refused on a manual squad",
-    manualDraft.status === 400,
-    String(manualDraft.body?.error ?? manualDraft.status).slice(0, 80),
+    "a manual squad can be drafted",
+    manualDraft.status === 200 && manualDraft.body?.draft?.moves?.length === 1,
+    manualDraft.status === 200
+      ? `net ${manualDraft.body?.draft?.comparison?.netHorizon}`
+      : String(manualDraft.body?.error).slice(0, 90),
+  );
+  check(
+    "and its hit is withheld rather than guessed",
+    manualDraft.body?.draft?.hitUnknown === true &&
+      manualDraft.body?.draft?.hitCost === 0,
+  );
+
+  // A chip answers the question the manual case cannot: the limit is
+  // suspended, so there is no hit to know about either way.
+  const manualWildcard = await call("/api/projections", {
+    method: "POST",
+    body: JSON.stringify({
+      playerIds: squad,
+      transfers: [{ out: squad[14], in: swapIn }],
+      chip: "wildcard",
+    }),
+  });
+  check(
+    "a chip settles the hit even on a manual squad",
+    manualWildcard.body?.draft?.hitUnknown === false &&
+      manualWildcard.body?.draft?.hitCost === 0 &&
+      manualWildcard.body?.draft?.chip === "wildcard",
+  );
+
+  // The composition rules are shared with every other kind of squad, so this
+  // is really a check that a manual draft is put through them at all.
+  const fourth = await fourthFromAClub(squad);
+  const illegal = await call("/api/projections", {
+    method: "POST",
+    body: JSON.stringify({ playerIds: squad, transfers: [fourth] }),
+  });
+  check(
+    "a manual draft breaking the three-per-club rule is refused",
+    illegal.status === 400,
+    String(illegal.body?.error ?? illegal.status).slice(0, 70),
+  );
+
+  const crossPosition = await call("/api/projections", {
+    method: "POST",
+    body: JSON.stringify({
+      playerIds: squad,
+      transfers: [{ out: squad[0], in: swapIn }],
+    }),
+  });
+  check(
+    "and so is one that swaps across positions",
+    crossPosition.status === 400,
+    String(crossPosition.body?.error ?? crossPosition.status).slice(0, 60),
   );
 
   console.log(
     `\n${failures === 0 ? "All checks passed." : `${failures} check(s) failed.`}\n`,
   );
+}
+
+/** Cheap FPL data, fetched once and reused by the squad helpers. */
+let bootstrapCache: {
+  elements: { id: number; element_type: number; now_cost: number; team: number; status: string }[];
+} | null = null;
+
+async function bootstrap() {
+  if (!bootstrapCache) {
+    const res = await fetch("https://fantasy.premierleague.com/api/bootstrap-static/");
+    bootstrapCache = await res.json();
+  }
+  return bootstrapCache!;
+}
+
+/** A forward the budget can absorb, so the legality check is what is tested. */
+async function affordableSwap(squad: number[]): Promise<number> {
+  const { elements } = await bootstrap();
+  const out = elements.find((e) => e.id === squad[14])!;
+  const candidate = elements
+    .filter(
+      (e) =>
+        e.element_type === out.element_type &&
+        e.status === "a" &&
+        !squad.includes(e.id) &&
+        e.now_cost <= out.now_cost + 5,
+    )
+    .sort((a, b) => b.now_cost - a.now_cost)[0];
+  if (!candidate) throw new Error("no affordable swap available");
+  return candidate.id;
+}
+
+/**
+ * A swap that would put a fourth player from one club in the squad.
+ *
+ * Finds a club the squad already has three of, and someone to sell from
+ * elsewhere in the same position — so the only thing wrong with the move is
+ * the club limit.
+ */
+async function fourthFromAClub(squad: number[]): Promise<{ out: number; in: number }> {
+  const { elements } = await bootstrap();
+  const held = elements.filter((e) => squad.includes(e.id));
+  const counts = new Map<number, number>();
+  for (const e of held) counts.set(e.team, (counts.get(e.team) ?? 0) + 1);
+
+  for (const [team, count] of counts) {
+    if (count < 3) continue;
+    for (const incoming of elements) {
+      if (incoming.team !== team || squad.includes(incoming.id)) continue;
+      const sellable = held.find(
+        (e) => e.element_type === incoming.element_type && e.team !== team,
+      );
+      if (sellable) return { out: sellable.id, in: incoming.id };
+    }
+  }
+  throw new Error("no club in the squad has three players to exceed");
 }
 
 /**
@@ -238,17 +349,14 @@ async function main() {
  * a squad that cannot be fielded tests the error path and nothing else.
  */
 async function pickLegalSquad(): Promise<number[]> {
-  const res = await fetch("https://fantasy.premierleague.com/api/bootstrap-static/");
-  const bootstrap = (await res.json()) as {
-    elements: { id: number; element_type: number; now_cost: number; team: number; status: string }[];
-  };
+  const { elements } = await bootstrap();
   const quota: Record<number, number> = { 1: 2, 2: 5, 3: 5, 4: 3 };
   const held: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
   const perClub = new Map<number, number>();
   const squad: number[] = [];
   let spend = 0;
 
-  for (const el of [...bootstrap.elements]
+  for (const el of [...elements]
     .filter((e) => e.status === "a")
     .sort((a, b) => a.now_cost - b.now_cost)) {
     if (held[el.element_type] >= quota[el.element_type]) continue;
