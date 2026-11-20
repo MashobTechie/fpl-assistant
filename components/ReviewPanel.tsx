@@ -35,42 +35,42 @@ function PlayerRow({
   wasRightCaptain: boolean;
 }) {
   return (
-    <tr className="border-t border-[--color-border]">
-      <td className="py-2 pr-2 text-xs font-semibold text-[--color-ink-faint]">
+    <tr className="border-t border-border">
+      <td className="py-2 pr-2 text-xs font-semibold text-ink-faint">
         {player.position}
       </td>
       <td className="py-2 pr-3">
         <span className="flex items-center gap-1.5">
-          <span className={player.started ? "font-medium" : "text-[--color-ink-muted]"}>
+          <span className={player.started ? "font-medium" : "text-ink-muted"}>
             {player.webName}
           </span>
           {player.isCaptain && (
             <span
               title={wasRightCaptain ? "Captain — the right call" : "Captain"}
-              className="flex h-4 w-4 items-center justify-center rounded-full bg-[--color-accent] text-[10px] font-bold text-[--color-base]"
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-base"
             >
               C
             </span>
           )}
           {shouldHaveStarted && (
-            <span className="eyebrow rounded bg-[--color-cyan]/15 px-1.5 py-0.5 text-[9px] text-[--color-cyan]">
+            <span className="eyebrow rounded bg-cyan/15 px-1.5 py-0.5 text-[9px] text-cyan">
               should have started
             </span>
           )}
           {player.started && player.minutes === 0 && (
-            <span className="eyebrow rounded bg-[--color-pink]/15 px-1.5 py-0.5 text-[9px] text-[--color-pink]">
+            <span className="eyebrow rounded bg-pink/15 px-1.5 py-0.5 text-[9px] text-pink">
               did not play
             </span>
           )}
         </span>
-        <span className="text-[11px] text-[--color-ink-faint]">
+        <span className="text-[11px] text-ink-faint">
           {player.team} · {player.minutes}′
         </span>
       </td>
       <td className="numeric py-2 text-right font-semibold">
         {player.points}
         {player.isCaptain && (
-          <span className="ml-1 text-[11px] font-normal text-[--color-ink-faint]">
+          <span className="ml-1 text-[11px] font-normal text-ink-faint">
             ×2
           </span>
         )}
@@ -123,9 +123,9 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
       </div>
 
       {review.chipPlayed && (
-        <p className="mt-4 text-sm text-[--color-ink-muted]">
+        <p className="mt-4 text-sm text-ink-muted">
           Played the{" "}
-          <span className="font-semibold text-[--color-cyan]">
+          <span className="font-semibold text-cyan">
             {CHIP_LABELS[review.chipPlayed] ?? review.chipPlayed}
           </span>
           .
@@ -138,14 +138,14 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
             key={i}
             className={`flex gap-2.5 rounded-lg px-3.5 py-2.5 text-sm leading-relaxed ${
               perfect
-                ? "bg-[--color-accent]/10 text-[--color-ink-muted]"
-                : "bg-[--color-surface-2] text-[--color-ink-muted]"
+                ? "bg-accent/10 text-ink-muted"
+                : "bg-surface-2 text-ink-muted"
             }`}
           >
             <span
               aria-hidden
               className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                perfect ? "bg-[--color-accent]" : "bg-[--color-pink]"
+                perfect ? "bg-accent" : "bg-pink"
               }`}
             />
             {lesson}
@@ -157,7 +157,7 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="mt-4 self-start text-sm font-medium text-[--color-cyan] transition hover:underline"
+        className="mt-4 self-start text-sm font-medium text-cyan transition hover:underline"
       >
         {open ? "Hide the full squad" : "See every player’s score"}
       </button>
@@ -166,7 +166,7 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
         <div className="scroll-x mt-3">
           <table className="w-full min-w-[22rem] text-sm">
             <thead>
-              <tr className="text-[11px] uppercase tracking-wider text-[--color-ink-faint]">
+              <tr className="text-[11px] uppercase tracking-wider text-ink-faint">
                 <th className="pb-2 text-left font-medium">Pos</th>
                 <th className="pb-2 text-left font-medium">Player</th>
                 <th className="pb-2 text-right font-medium">Pts</th>
@@ -181,10 +181,10 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
                   wasRightCaptain={captainWasRight}
                 />
               ))}
-              <tr className="border-t border-[--color-border]">
+              <tr className="border-t border-border">
                 <td
                   colSpan={3}
-                  className="eyebrow pt-3 pb-1 text-[10px] text-[--color-ink-faint]"
+                  className="eyebrow pt-3 pb-1 text-[10px] text-ink-faint"
                 >
                   Bench — {review.benchPoints} points unused
                 </td>
@@ -201,7 +201,7 @@ export function ReviewPanel({ review }: { review: GameweekReview }) {
           </table>
 
           {missed.length > 0 && (
-            <p className="mt-3 text-xs leading-relaxed text-[--color-ink-faint]">
+            <p className="mt-3 text-xs leading-relaxed text-ink-faint">
               “Left behind” counts only what a legal formation could have
               fielded, so it is smaller than the {review.benchPoints} points sat
               on the bench — you can never start all four substitutes.

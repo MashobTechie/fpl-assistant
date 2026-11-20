@@ -10,7 +10,7 @@ function BasisNote({ basis }: { basis: PlayerProjection["dataBasis"] }) {
         ? "mostly last season"
         : "last season's numbers";
   return (
-    <span className="ml-1.5 text-[11px] text-[--color-ink-faint]">({text})</span>
+    <span className="ml-1.5 text-[11px] text-ink-faint">({text})</span>
   );
 }
 
@@ -27,8 +27,8 @@ function Row({
     player.playerId === captainId ? "C" : player.playerId === viceId ? "V" : null;
 
   return (
-    <tr className="border-t border-[--color-border] transition hover:bg-[--color-surface-2]/60">
-      <td className="py-2.5 pr-2 text-xs font-semibold text-[--color-ink-faint]">
+    <tr className="border-t border-border transition hover:bg-surface-2/60">
+      <td className="py-2.5 pr-2 text-xs font-semibold text-ink-faint">
         {player.position}
       </td>
       <td className="py-2 pr-3">
@@ -39,8 +39,8 @@ function Row({
               title={armband === "C" ? "Captain" : "Vice-captain"}
               className={`numeric flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                 armband === "C"
-                  ? "bg-[--color-accent] text-[--color-base]"
-                  : "text-[--color-accent] ring-[1.5px] ring-inset ring-[--color-accent]"
+                  ? "bg-accent text-base"
+                  : "text-accent ring-[1.5px] ring-inset ring-accent"
               }`}
             >
               {armband}
@@ -49,25 +49,25 @@ function Row({
           {player.status !== "a" && (
             <span
               title={player.news || "Flagged"}
-              className="text-[--color-pink]"
+              className="text-pink"
               aria-label="Flagged"
             >
               ⚠
             </span>
           )}
         </div>
-        <div className="text-[11px] text-[--color-ink-faint]">
+        <div className="text-[11px] text-ink-faint">
           {player.team} · £{player.cost.toFixed(1)}m
           <BasisNote basis={player.dataBasis} />
         </div>
       </td>
-      <td className="numeric py-2.5 pr-3 text-right text-base font-bold text-[--color-accent]">
+      <td className="numeric py-2.5 pr-3 text-right text-base font-bold text-accent">
         {player.nextGameweekPoints.toFixed(1)}
       </td>
-      <td className="numeric py-2.5 pr-3 text-right font-semibold text-[--color-ink-muted]">
+      <td className="numeric py-2.5 pr-3 text-right font-semibold text-ink-muted">
         {player.totalExpectedPoints.toFixed(1)}
       </td>
-      <td className="numeric hidden py-2 pr-3 text-right text-[--color-ink-muted] sm:table-cell">
+      <td className="numeric hidden py-2 pr-3 text-right text-ink-muted sm:table-cell">
         {Math.round(player.expectedMinutes)}′
       </td>
       <td className="hidden py-2 pr-3 sm:table-cell">
@@ -76,7 +76,7 @@ function Row({
       <td className="py-2">
         <div className="flex flex-wrap gap-1">
           {player.perFixture.length === 0 ? (
-            <span className="eyebrow rounded bg-[--color-pink]/15 px-2 py-1 text-[10px] text-[--color-pink]">Blank</span>
+            <span className="eyebrow rounded bg-pink/15 px-2 py-1 text-[10px] text-pink">Blank</span>
           ) : (
             player.perFixture.map((f, i) => (
               <FdrPill
@@ -112,7 +112,7 @@ export function LineupTable({
     <div className="scroll-x">
       <table className="w-full min-w-[38rem] text-sm">
         <thead>
-          <tr className="eyebrow text-[10px] text-[--color-ink-faint]">
+          <tr className="eyebrow text-[10px] text-ink-faint">
             <th className="pb-3 text-left">Pos</th>
             <th className="pb-3 text-left">Player</th>
             <th className="pb-3 text-right">GW{gameweek}</th>
@@ -126,10 +126,10 @@ export function LineupTable({
           {startingXI.map((p) => (
             <Row key={p.playerId} player={p} captainId={captainId} viceId={viceId} />
           ))}
-          <tr className="border-t border-[--color-border]">
+          <tr className="border-t border-border">
             <td
               colSpan={7}
-              className="eyebrow pt-5 pb-2 text-[10px] text-[--color-cyan]"
+              className="eyebrow pt-5 pb-2 text-[10px] text-cyan"
             >
               Bench — in order
             </td>

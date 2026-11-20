@@ -113,13 +113,13 @@ export function SquadBuilder({
 
   if (loadError) {
     return (
-      <p className="rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-3 text-sm text-[--color-pink]">
+      <p className="rounded-lg border border-pink/40 bg-pink/10 px-3.5 py-3 text-sm text-pink">
         Couldn&apos;t load players: {loadError}
       </p>
     );
   }
   if (!players) {
-    return <p className="text-sm text-[--color-ink-muted]">Loading players…</p>;
+    return <p className="text-sm text-ink-muted">Loading players…</p>;
   }
 
   return (
@@ -135,10 +135,10 @@ export function SquadBuilder({
               onClick={() => setPosition(pos)}
               className={`numeric rounded-lg border px-2.5 py-1.5 text-xs font-bold transition ${
                 position === pos
-                  ? "border-[--color-cyan] bg-[--color-cyan]/10 text-[--color-cyan]"
+                  ? "border-cyan bg-cyan/10 text-cyan"
                   : done
-                    ? "border-[--color-accent]/50 text-[--color-accent]"
-                    : "border-[--color-border] text-[--color-ink-muted] hover:border-[--color-border-bright]"
+                    ? "border-accent/50 text-accent"
+                    : "border-border text-ink-muted hover:border-border-bright"
               }`}
             >
               {pos} {counts[pos]}/{SQUAD_QUOTA[pos]}
@@ -147,12 +147,12 @@ export function SquadBuilder({
           );
         })}
         <span className="ml-auto text-right">
-          <span className="eyebrow block text-[9px] text-[--color-ink-faint]">
+          <span className="eyebrow block text-[9px] text-ink-faint">
             {overBudget ? "Over budget" : "Remaining"}
           </span>
           <span
             className={`numeric block text-sm font-bold ${
-              overBudget ? "text-[--color-pink]" : "text-[--color-accent]"
+              overBudget ? "text-pink" : "text-accent"
             }`}
           >
             £{Math.abs(SQUAD_BUDGET - spend).toFixed(1)}m
@@ -165,10 +165,10 @@ export function SquadBuilder({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={`Search ${position} by name or team…`}
-        className="rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-2.5 text-sm outline-none transition focus:border-[--color-cyan]"
+        className="rounded-lg border border-border bg-base px-3.5 py-2.5 text-sm outline-none transition focus:border-cyan"
       />
 
-      <ul className="max-h-80 divide-y divide-[--color-border] overflow-y-auto rounded-lg border border-[--color-border]">
+      <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border">
         {visible.map((p) => {
           const isSelected = selectedIds.has(p.id);
           const blocked = blockedReason(p);
@@ -180,19 +180,19 @@ export function SquadBuilder({
                 disabled={blocked !== null}
                 title={blocked ?? undefined}
                 className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition disabled:opacity-40 ${
-                  isSelected ? "bg-[--color-accent]/10" : "hover:bg-[--color-surface-2]"
+                  isSelected ? "bg-accent/10" : "hover:bg-surface-2"
                 }`}
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate font-medium">{p.name}</span>
                     {p.status !== "a" && (
-                      <span className="text-[--color-pink]" title={p.risks[0]}>
+                      <span className="text-pink" title={p.risks[0]}>
                         ⚠
                       </span>
                     )}
                   </span>
-                  <span className="text-[11px] text-[--color-ink-faint]">
+                  <span className="text-[11px] text-ink-faint">
                     {p.team}
                     {(clubCounts.get(p.team) ?? 0) > 0 &&
                       ` ${clubCounts.get(p.team)}/${MAX_PER_CLUB}`}
@@ -204,10 +204,10 @@ export function SquadBuilder({
                     <FdrPill key={i} opponent={f.opponent} home={f.home} fdr={f.fdr} />
                   ))}
                 </span>
-                <span className="numeric w-12 text-right font-bold text-[--color-accent]">
+                <span className="numeric w-12 text-right font-bold text-accent">
                   {p.horizon.toFixed(1)}
                 </span>
-                <span className="numeric w-4 text-center font-bold text-[--color-accent]">
+                <span className="numeric w-4 text-center font-bold text-accent">
                   {isSelected ? "✓" : ""}
                 </span>
               </button>
@@ -215,7 +215,7 @@ export function SquadBuilder({
           );
         })}
         {visible.length === 0 && (
-          <li className="px-3 py-4 text-sm text-[--color-ink-muted]">
+          <li className="px-3 py-4 text-sm text-ink-muted">
             No {position} matches “{query}”.
           </li>
         )}
@@ -225,7 +225,7 @@ export function SquadBuilder({
         type="button"
         disabled={!complete || overBudget || pending}
         onClick={() => onSubmit(selected.map((p) => p.id))}
-        className="rounded-lg bg-[--color-accent] px-4 py-3 font-semibold text-[--color-base] transition hover:bg-[--color-accent-dim] active:translate-y-px disabled:opacity-50"
+        className="rounded-lg bg-accent px-4 py-3 font-semibold text-base transition hover:bg-accent-dim active:translate-y-px disabled:opacity-50"
       >
         {pending
           ? "Analysing…"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   forgetDraft,
@@ -8,6 +8,10 @@ import {
   rememberDraft,
 } from "@/lib/draft-session";
 import type { TransferChip } from "@/lib/squad/draft";
+import {
+  CHIP_WORTH_IT_POINTS,
+  DRAFT_WORTH_IT_POINTS,
+} from "@/lib/types";
 import type {
   AnalysisResponse,
   GameweekAnalysisLike,
@@ -22,15 +26,28 @@ import { LineupTable } from "./LineupTable";
 import { PlanPanel } from "./PlanPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { SavedDrafts } from "./SavedDrafts";
-import { VerdictPanel } from "./VerdictPanel";
+import { TheCall } from "./TheCall";
+import { Scoreboard } from "./Scoreboard";
 import { DraftVerdict } from "./DraftVerdict";
 import { PitchView } from "./PitchView";
 import { TransferSandbox, type Incoming } from "./TransferSandbox";
 import { SquadBuilder } from "./SquadBuilder";
-import { Button, Card, SectionHeading, SegmentedControl, StatTile } from "./ui";
+import {
+  Button,
+  Card,
+  SectionHeading,
+  SegmentedControl,
+  TabPanel,
+  TabRail,
+  Tag,
+  type Tone,
+} from "./ui";
 
 type Mode = "import" | "manual";
 type View = "pitch" | "list";
+
+/** The desk's tabs, in the order a manager needs them. */
+type Tab = "lineup" | "captain" | "transfers" | "chips" | "review" | "analyst";
 
 /**
  * Two requests, not one.
@@ -51,6 +68,7 @@ export function DashboardClient({
   savedAnalysis,
   nextGameweek,
   liveGameweek,
+  deadline,
 }: {
   initialEntryId: number | null;
   /** The last squad this manager saved, restored on load. */
@@ -62,6 +80,8 @@ export function DashboardClient({
   nextGameweek: number | null;
   /** A gameweek already locked and being played, or null between gameweeks. */
   liveGameweek: number | null;
+  /** ISO deadline of the gameweek being decided, for the live countdown. */
+  deadline: string | null;
 }) {
   const [mode, setMode] = useState<Mode>(savedSource === "manual" ? "manual" : "import");
   const [entryId, setEntryId] = useState(initialEntryId ? String(initialEntryId) : "");
@@ -71,6 +91,12 @@ export function DashboardClient({
   // Default to the gameweek you can still act on. The locked one is offered
   // beside it, because "how is my current team doing" is a fair question too.
   const [gameweek, setGameweek] = useState<number | null>(nextGameweek);
+  // Which drawer of evidence is open. The verdict above it is always visible,
+  // which is the whole point of the rail: one panel at a time, chosen.
+  const [tab, setTab] = useState<Tab>("lineup");
+  // Squad setup is the hero until there is a squad, and a disclosure after.
+  // Left open permanently it pushed the one thing that matters below the fold.
+  const [setupOpen, setSetupOpen] = useState(false);
 
   const [projections, setProjections] = useState<ProjectionsResponse | null>(null);
   // ---- Transfer drafts ----------------------------------------------------
@@ -522,346 +548,552 @@ export function DashboardClient({
   // The freshly fetched analysis wins; otherwise fall back to the stored one.
   const shownAnalysis = analysis?.analysis ?? savedAnalysis?.analysis ?? null;
 
+  // Whether the gameweek on screen has already kicked off. Nothing about it can
+  // be changed, so the countdown is replaced by a plain statement of fact.
+  const locked = liveGameweek !== null && gameweek === liveGameweek;
+
+  /**
+   * The desk's tabs, derived from what there is to show rather than fixed.
+   *
+   * A manual squad has no review; a squad nobody has paid to analyse has no
+   * analyst tab. Offering a tab that opens on an empty panel is worse than not
+   * offering it, so the rail is built from the data and the selection falls
+   * back to the lineup when the tab you were on stops existing.
+   *
+   * The badges exist because hiding a panel costs you the chance to notice it
+   * had something to say. A plan worth four points, a chip whose week is this
+   * week, an analysis that just landed — those announce themselves on the rail.
+   */
+  const chipsWorthPlaying = projections
+    ? projections.chips.filter(
+        (c) =>
+          c.available &&
+          c.bestGameweek === projections.gameweek &&
+          (c.bestGain ?? 0) >= CHIP_WORTH_IT_POINTS,
+      ).length
+    : 0;
+
+  const tabs: {
+    value: Tab;
+    label: string;
+    badge?: ReactNode;
+    badgeTone?: Tone;
+  }[] = projections
+    ? [
+        {
+          value: "lineup" as Tab,
+          label: "Lineup",
+          badge: projections.optimal.formationLabel,
+          badgeTone: "info" as Tone,
+        },
+        ...(projections.captaincy.length > 0
+          ? [{ value: "captain" as Tab, label: "Captain" }]
+          : []),
+        {
+          value: "transfers" as Tab,
+          label: "Transfers",
+          badge:
+            projections.plan.gain >= DRAFT_WORTH_IT_POINTS
+              ? `+${projections.plan.gain.toFixed(1)}`
+              : undefined,
+          badgeTone: "accent" as Tone,
+        },
+        {
+          value: "chips" as Tab,
+          label: "Chips",
+          badge: chipsWorthPlaying > 0 ? String(chipsWorthPlaying) : undefined,
+          badgeTone: "accent" as Tone,
+        },
+        ...(projections.review
+          ? [
+              {
+                value: "review" as Tab,
+                label: "Last week",
+                badge: String(projections.review.points),
+                badgeTone: "neutral" as Tone,
+              },
+            ]
+          : []),
+        ...(shownAnalysis
+          ? [
+              {
+                value: "analyst" as Tab,
+                label: "Analyst",
+                badge: analysis && !analysis.cached ? "New" : undefined,
+                badgeTone: "info" as Tone,
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  const activeTab: Tab = tabs.some((t) => t.value === tab) ? tab : "lineup";
+
+  /**
+   * The one action attached to the verdict.
+   *
+   * It used to live at the very bottom of the page, nine panels below the thing
+   * it acts on. The call and the button that improves it belong together.
+   */
+  const analystAction =
+    projections && !thinking ? (
+      <>
+        <Button
+          size="sm"
+          variant={shownAnalysis ? "ghost" : "primary"}
+          onClick={() =>
+            void runAnalysis({
+              ...(mode === "import" && entryId
+                ? {
+                    entryId: Number(entryId),
+                    // A draft is re-analysed as a draft, not as the squad it
+                    // replaced.
+                    ...(draftMoves ? { transfers: draftMoves } : {}),
+                    ...(draftChip ? { chip: draftChip } : {}),
+                  }
+                : { playerIds: projections.squad.map((p) => p.playerId) }),
+              // Force a fresh call only when something is already on screen.
+              // Otherwise the cache is exactly what we want to hit, for free.
+              refresh: Boolean(shownAnalysis),
+            })
+          }
+        >
+          {shownAnalysis ? "Re-run the analysis" : "Get the analyst's read"}
+        </Button>
+        <span className="text-xs text-ink-faint">
+          {shownAnalysis
+            ? "Uses one analysis from today's allowance."
+            : "A written read on captaincy, risks and transfers."}
+        </span>
+      </>
+    ) : null;
+
   return (
-    <div className="flex flex-col gap-6">
-      <Card accent className="p-5 sm:p-6">
-        <SectionHeading hint={projections ? `GW${projections.gameweek}` : undefined}>
-          Your squad
-        </SectionHeading>
+    <>
+      <Scoreboard
+        gameweek={projections?.gameweek ?? gameweek}
+        deadline={locked ? null : deadline}
+        locked={locked}
+        projected={projections?.optimal.expectedPoints ?? null}
+        bank={projections?.bank ?? null}
+        squadValue={projections?.squadValue ?? null}
+        teamName={projections?.teamName ?? null}
+      />
 
-        <div className="mb-5 flex flex-wrap gap-3">
-          <SegmentedControl
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "import", label: "Import by FPL ID" },
-              { value: "manual", label: "Build manually" },
-            ]}
-          />
+      <div className="mx-auto flex max-w-5xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
+        {/* The row that says which week, and whose squad. Only rendered once
+            there is a squad — before that the setup card says both. */}
+        {projections && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {liveGameweek !== null && nextGameweek !== null ? (
+              <SegmentedControl
+                value={String(gameweek ?? nextGameweek)}
+                onChange={(v) => changeGameweek(Number(v))}
+                options={[
+                  { value: String(liveGameweek), label: `GW${liveGameweek} · locked` },
+                  { value: String(nextGameweek), label: `GW${nextGameweek} · next` },
+                ]}
+              />
+            ) : (
+              <span />
+            )}
 
-          {/* Only meaningful while a gameweek is locked and being played. The
-              rest of the week there is one answer and no choice to offer. */}
-          {liveGameweek !== null && nextGameweek !== null && (
-            <SegmentedControl
-              value={String(gameweek ?? nextGameweek)}
-              onChange={(v) => changeGameweek(Number(v))}
-              options={[
-                { value: String(liveGameweek), label: `GW${liveGameweek} · locked` },
-                { value: String(nextGameweek), label: `GW${nextGameweek} · next` },
-              ]}
-            />
-          )}
-        </div>
+            <button
+              type="button"
+              onClick={() => setSetupOpen((o) => !o)}
+              aria-expanded={setupOpen}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-ink-muted transition hover:border-border-bright hover:text-ink"
+            >
+              <span className="eyebrow text-[10px] text-ink-faint">
+                {mode === "import" ? "Imported" : "Built by hand"}
+              </span>
+              {mode === "import" && entryId && (
+                <span className="numeric text-xs">{entryId}</span>
+              )}
+              <span aria-hidden className="text-ink-faint">
+                {setupOpen ? "▴" : "▾"}
+              </span>
+            </button>
+          </div>
+        )}
 
-        {liveGameweek !== null && gameweek === liveGameweek && (
-          <p className="mb-4 rounded-lg border border-[--color-cyan]/30 bg-[--color-cyan]/10 px-3.5 py-2.5 text-sm text-[--color-ink-muted]">
+        {locked && projections && (
+          <p className="rounded-inset border border-cyan/30 bg-cyan/10 px-3.5 py-2.5 text-sm text-ink-muted">
             Gameweek {liveGameweek} is already locked, so nothing here can be
             changed — this is what your team is projected to score.
           </p>
         )}
 
-        {mode === "import" ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const id = Number(entryId);
-              if (!Number.isInteger(id) || id <= 0) {
-                setError("Enter a valid FPL team ID — digits only.");
-                return;
-              }
-              void run({ entryId: id });
-            }}
-            className="flex flex-col gap-3"
-          >
-            <label htmlFor="entryId" className="eyebrow text-[11px] text-[--color-ink-faint]">
-              FPL team ID
-              <span className="ml-1.5 font-normal normal-case tracking-normal">
-                — the number in your points-page URL
-              </span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="entryId"
-                inputMode="numeric"
-                value={entryId}
-                onChange={(e) => setEntryId(e.target.value.replace(/\D/g, ""))}
-                placeholder="1234567"
-                className="numeric min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-3 text-lg font-semibold outline-none transition focus:border-[--color-cyan]"
+        {/* Setup. The hero when there is no squad, a disclosure once there is
+            one: a permanent form at the top of the page pushed the verdict —
+            the only thing most people open this app for — below the fold. */}
+        {(!projections || setupOpen) && (
+          <Card accent className="p-5 sm:p-7">
+            <SectionHeading
+              hint={projections ? undefined : "Two ways in"}
+              tone="accent"
+            >
+              {projections ? "Change squad" : "Start with your squad"}
+            </SectionHeading>
+
+            {!projections && (
+              <p className="-mt-1 mb-5 max-w-prose text-sm leading-relaxed text-ink-muted">
+                Import the fifteen you already own, or build a squad by hand to
+                try one out. Either way the projections are computed here, from
+                xG, minutes and fixtures — never guessed by a language model.
+              </p>
+            )}
+
+            <div className="mb-5">
+              <SegmentedControl
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: "import", label: "Import by FPL ID" },
+                  { value: "manual", label: "Build manually" },
+                ]}
               />
-              <Button type="submit" disabled={pending || !entryId} className="shrink-0">
-                {pending ? "Projecting…" : "Analyse"}
-              </Button>
             </div>
-          </form>
-        ) : (
-          <SquadBuilder pending={pending} onSubmit={(playerIds) => void run({ playerIds })} />
+
+            {mode === "import" ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const id = Number(entryId);
+                  if (!Number.isInteger(id) || id <= 0) {
+                    setError("Enter a valid FPL team ID — digits only.");
+                    return;
+                  }
+                  setSetupOpen(false);
+                  void run({ entryId: id });
+                }}
+                className="flex flex-col gap-3"
+              >
+                <label htmlFor="entryId" className="eyebrow text-[11px] text-ink-faint">
+                  FPL team ID
+                  <span className="ml-1.5 font-normal normal-case tracking-normal">
+                    — the number in your points-page URL
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="entryId"
+                    inputMode="numeric"
+                    value={entryId}
+                    onChange={(e) => setEntryId(e.target.value.replace(/\D/g, ""))}
+                    placeholder="1234567"
+                    className="numeric w-full max-w-[13rem] rounded-inset border border-border bg-base px-3.5 py-3 text-lg font-semibold outline-none transition focus:border-cyan"
+                  />
+                  <Button type="submit" disabled={pending || !entryId} className="shrink-0">
+                    {pending ? "Projecting…" : "Analyse"}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <SquadBuilder
+                pending={pending}
+                onSubmit={(playerIds) => {
+                  setSetupOpen(false);
+                  void run({ playerIds });
+                }}
+              />
+            )}
+
+            {error && (
+              <p
+                role="alert"
+                className="mt-4 rounded-inset border border-pink/40 bg-pink/10 px-3.5 py-3 text-sm leading-relaxed text-pink"
+              >
+                {error}
+              </p>
+            )}
+          </Card>
         )}
 
-        {error && (
+        {!projections && !restoring && (
+          <dl className="grid gap-px overflow-hidden rounded-panel border border-border bg-border sm:grid-cols-3">
+            {[
+              {
+                t: "About two seconds",
+                d: "The projections are computed, not generated — no model waits on another model.",
+              },
+              {
+                t: "The XI is solved",
+                d: "Nine legal formations, optimised exactly. The best eleven is found, never guessed.",
+              },
+              {
+                t: "The written read is optional",
+                d: "Every number here costs nothing. Only the analyst's paragraphs bill anything.",
+              },
+            ].map((f) => (
+              <div key={f.t} className="bg-surface px-5 py-5">
+                <div className="eyebrow text-[10px] text-cyan">{f.t}</div>
+                <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+                  {f.d}
+                </p>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        {error && projections && !setupOpen && (
           <p
             role="alert"
-            className="mt-4 rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-3 text-sm leading-relaxed text-[--color-pink]"
+            className="rounded-inset border border-pink/40 bg-pink/10 px-3.5 py-3 text-sm leading-relaxed text-pink"
           >
             {error}
           </p>
         )}
-      </Card>
 
-      {projections && !projections.draft && !sandbox && (
-        <VerdictPanel
-          verdict={projections.verdict}
-          analystVerdict={shownAnalysis?.plainVerdict ?? null}
-          gameweek={projections.gameweek}
-        />
-      )}
+        {/* ---- The call ------------------------------------------------- */}
 
-      {projections && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile
-            label="Squad value"
-            value={
-              projections.squadValue !== null
-                ? `£${projections.squadValue.toFixed(1)}m`
-                : "—"
+        {projections && !projections.draft && !sandbox && (
+          <TheCall
+            verdict={projections.verdict}
+            analystVerdict={shownAnalysis?.plainVerdict ?? null}
+            gameweek={projections.gameweek}
+            action={analystAction}
+          />
+        )}
+
+        {projections?.draft && (
+          <DraftVerdict
+            draft={projections.draft}
+            horizon={projections.horizon}
+            onBack={leaveDraft}
+            onEdit={editDraft}
+            // Keeping it needs a gameweek to file it under; the FPL id is
+            // recorded when there is one but a manual draft saves without.
+            save={
+              gameweek !== null
+                ? {
+                    onSave: (name) => void saveDraft(name),
+                    saving: savingDraft,
+                    error: saveDraftError,
+                    savedAs,
+                  }
+                : undefined
             }
           />
-          <StatTile
-            label="Bank"
-            value={projections.bank !== null ? `£${projections.bank.toFixed(1)}m` : "—"}
-          />
-          <StatTile
-            label={`GW${projections.gameweek} projected`}
-            value={projections.optimal.expectedPoints.toFixed(1)}
-            tone="accent"
-            sub={projections.optimal.formationLabel}
-          />
-          <StatTile
-            label={`Next ${projections.horizon} GW`}
-            value={projections.optimal.startingXI
-              .reduce((sum, p) => sum + p.totalExpectedPoints, 0)
-              .toFixed(0)}
-            sub="starting XI"
-          />
-        </div>
-      )}
+        )}
 
-      {projections?.draft && (
-        <DraftVerdict
-          draft={projections.draft}
-          horizon={projections.horizon}
-          onBack={leaveDraft}
-          onEdit={editDraft}
-          // Keeping it needs a gameweek to file it under; the FPL id is
-          // recorded when there is one but a manual draft saves without.
-          save={
-            gameweek !== null
-              ? {
-                  onSave: (name) => void saveDraft(name),
-                  saving: savingDraft,
-                  error: saveDraftError,
-                  savedAs,
-                }
-              : undefined
-          }
-        />
-      )}
+        {thinking && <AnalystProgress />}
 
-      {projections && sandbox && (
-        <Card accent className="p-4 sm:p-6">
-          <SectionHeading hint={`GW${projections.gameweek} deadline`}>
-            Try transfers
-          </SectionHeading>
-          <TransferSandbox
-            projections={projections}
-            checking={checkingDraft}
-            error={draftError}
-            onCheck={(t, c) => void checkDraft(t, c, { analyse: true })}
-            onClose={() => {
-              setSandbox(false);
-              setDraftError(null);
-              setSandboxSeed(undefined);
-              setSandboxChip(null);
-              setSandboxPlanned(undefined);
-            }}
-            initialMoves={sandboxSeed}
-            initialTransfers={sandboxPlanned}
-            initialChip={sandboxChip}
-          />
-        </Card>
-      )}
+        {analysisError && !thinking && (
+          <Card className="p-5" tone="alert">
+            <p role="alert" className="text-sm leading-relaxed text-pink">
+              {analysisError}
+            </p>
+            <p className="mt-2 text-sm text-ink-muted">
+              The projections are unaffected — they are computed here, not by the
+              analyst.
+            </p>
+          </Card>
+        )}
 
-      {projections && !sandbox && (
-        <Card className="p-4 sm:p-6">
-          <SectionHeading
-            hint={`${projections.optimal.formationLabel} · ${projections.optimal.expectedPoints.toFixed(1)} xPts`}
-          >
-            {projections.draft ? "Lineup with your draft" : "Projected lineup"}
-          </SectionHeading>
-
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            {/* Transfers can only be tried on an imported squad — that is the
-                only one with a real bank and selling prices to check against —
-                and only for a deadline that has not passed. */}
-            {canDraft && (
-              <button
-                type="button"
-                onClick={() => trySandbox()}
-                className="order-last rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 sm:order-none"
+        {restoring && !projections && (
+          <Card className="p-5">
+            <div className="flex items-center gap-3">
+              <span
+                aria-hidden
+                className="h-1.5 w-10 overflow-hidden rounded-full bg-surface-3"
               >
-                Try transfers
-              </button>
-            )}
-            <SegmentedControl
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "pitch", label: "Pitch" },
-                { value: "list", label: "List" },
-              ]}
+                <span className="animate-sweep block h-full w-1/3 rounded-full bg-cyan" />
+              </span>
+              <p className="text-sm text-ink-muted">Restoring your saved squad…</p>
+            </div>
+          </Card>
+        )}
+
+        {/* ---- The sandbox, which takes the whole screen ---------------- */}
+
+        {projections && sandbox && (
+          <Card accent className="p-4 sm:p-6">
+            <SectionHeading hint={`GW${projections.gameweek} deadline`} tone="info">
+              Try transfers
+            </SectionHeading>
+            <TransferSandbox
+              projections={projections}
+              checking={checkingDraft}
+              error={draftError}
+              onCheck={(t, c) => void checkDraft(t, c, { analyse: true })}
+              onClose={() => {
+                setSandbox(false);
+                setDraftError(null);
+                setSandboxSeed(undefined);
+                setSandboxChip(null);
+                setSandboxPlanned(undefined);
+              }}
+              initialMoves={sandboxSeed}
+              initialTransfers={sandboxPlanned}
+              initialChip={sandboxChip}
             />
+          </Card>
+        )}
+
+        {/* ---- The evidence, one drawer at a time ----------------------- */}
+
+        {projections && !sandbox && (
+          <div className="mt-1 flex flex-col gap-5">
+            <TabRail
+              tabs={tabs}
+              value={activeTab}
+              onChange={setTab}
+              idPrefix="desk"
+            />
+
+            {/* Keyed on the tab so each panel mounts fresh and rises in —
+                without the key React reuses the node and the switch has no
+                motion at all. */}
+            <TabPanel
+              key={activeTab}
+              id={`desk-panel-${activeTab}`}
+              labelledBy={`desk-tab-${activeTab}`}
+            >
+              {activeTab === "lineup" && (
+                <Card className="p-4 sm:p-6" still>
+                  <SectionHeading
+                    hint={`${projections.optimal.formationLabel} · ${projections.optimal.expectedPoints.toFixed(1)} xPts`}
+                  >
+                    {projections.draft ? "Lineup with your draft" : "Projected lineup"}
+                  </SectionHeading>
+
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    {/* Transfers need a squad on screen and a deadline that has
+                        not passed. A locked gameweek has nothing to transfer
+                        for. */}
+                    {canDraft ? (
+                      <Button variant="info" size="sm" onClick={() => trySandbox()}>
+                        Try transfers
+                      </Button>
+                    ) : (
+                      <span />
+                    )}
+                    <SegmentedControl
+                      value={view}
+                      onChange={setView}
+                      options={[
+                        { value: "pitch", label: "Pitch" },
+                        { value: "list", label: "List" },
+                      ]}
+                    />
+                  </div>
+
+                  {view === "pitch" ? (
+                    <PitchView
+                      startingXI={projections.optimal.startingXI}
+                      bench={projections.optimal.bench}
+                      gameweek={projections.gameweek}
+                      formationLabel={projections.optimal.formationLabel}
+                      expectedPoints={projections.optimal.expectedPoints}
+                      captainId={shownAnalysis?.captain.playerId}
+                      viceId={shownAnalysis?.viceCaptain.playerId}
+                    />
+                  ) : (
+                    <LineupTable
+                      startingXI={projections.optimal.startingXI}
+                      bench={projections.optimal.bench}
+                      gameweek={projections.gameweek}
+                      horizon={projections.horizon}
+                      captainId={shownAnalysis?.captain.playerId}
+                      viceId={shownAnalysis?.viceCaptain.playerId}
+                    />
+                  )}
+                </Card>
+              )}
+
+              {activeTab === "captain" && (
+                <CaptaincyPanel
+                  candidates={projections.captaincy}
+                  gameweek={projections.gameweek}
+                />
+              )}
+
+              {activeTab === "transfers" && (
+                <>
+                  <PlanPanel
+                    plan={projections.plan}
+                    // The plan is already solved; re-finding its two names in
+                    // the picker by hand is busywork, so the move loads
+                    // straight into the sandbox.
+                    onTry={canDraft ? (t) => trySandbox([t]) : undefined}
+                  />
+                  {canDraft && (
+                    <Card className="flex flex-wrap items-center justify-between gap-4 p-5" still>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink">
+                          Something else in mind?
+                        </p>
+                        <p className="mt-1 text-sm text-ink-muted">
+                          Build any set of moves and the engine prices them,
+                          checks them against FPL&apos;s rules and says how often
+                          they pay off.
+                        </p>
+                      </div>
+                      <Button variant="info" onClick={() => trySandbox()}>
+                        Open the sandbox
+                      </Button>
+                    </Card>
+                  )}
+                  {gameweek !== null && !projections.draft && (
+                    <SavedDrafts
+                      drafts={savedDrafts}
+                      gameweek={gameweek}
+                      busyId={draftBusyId}
+                      onLoad={(d) => void openSavedDraft(d)}
+                      onDelete={(d) => void deleteSavedDraft(d)}
+                    />
+                  )}
+                </>
+              )}
+
+              {activeTab === "chips" && (
+                <ChipPanel
+                  chips={projections.chips}
+                  transfers={projections.transfers}
+                  gameweek={projections.gameweek}
+                />
+              )}
+
+              {activeTab === "review" && projections.review && (
+                <ReviewPanel review={projections.review} />
+              )}
+
+              {activeTab === "analyst" && shownAnalysis && (
+                <>
+                  {analysis ? (
+                    <AnalysisPanel
+                      analysis={analysis.analysis}
+                      gameweek={analysis.gameweek}
+                      optimalPoints={projections.optimal.expectedPoints}
+                      formation={projections.optimal.formationLabel}
+                      cached={analysis.cached}
+                      generatedAt={analysis.generatedAt}
+                    />
+                  ) : (
+                    savedAnalysis && (
+                      <AnalysisPanel
+                        analysis={savedAnalysis.analysis}
+                        gameweek={savedAnalysis.gameweek}
+                        optimalPoints={projections.optimal.expectedPoints}
+                        formation={projections.optimal.formationLabel}
+                        cached
+                        generatedAt={savedAnalysis.created_at}
+                      />
+                    )
+                  )}
+                  {analystAction && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {analystAction}
+                    </div>
+                  )}
+                </>
+              )}
+            </TabPanel>
           </div>
-
-          {view === "pitch" ? (
-            <PitchView
-              startingXI={projections.optimal.startingXI}
-              bench={projections.optimal.bench}
-              gameweek={projections.gameweek}
-              formationLabel={projections.optimal.formationLabel}
-              expectedPoints={projections.optimal.expectedPoints}
-              captainId={shownAnalysis?.captain.playerId}
-              viceId={shownAnalysis?.viceCaptain.playerId}
-            />
-          ) : (
-            <LineupTable
-              startingXI={projections.optimal.startingXI}
-              bench={projections.optimal.bench}
-              gameweek={projections.gameweek}
-              horizon={projections.horizon}
-              captainId={shownAnalysis?.captain.playerId}
-              viceId={shownAnalysis?.viceCaptain.playerId}
-            />
-          )}
-        </Card>
-      )}
-
-      {projections && projections.captaincy.length > 0 && (
-        <CaptaincyPanel
-          candidates={projections.captaincy}
-          gameweek={projections.gameweek}
-        />
-      )}
-
-      {projections && (
-        <PlanPanel
-          plan={projections.plan}
-          // The plan is already solved; re-finding its two names in the picker
-          // by hand is busywork, so the move loads straight into the sandbox.
-          onTry={canDraft ? (t) => trySandbox([t]) : undefined}
-        />
-      )}
-
-      {/* Beside the plan, because both answer the same question, and hidden
-          while a draft is open — the verdict on screen is the draft itself. */}
-      {projections && !sandbox && !projections.draft && gameweek !== null && (
-        <SavedDrafts
-          drafts={savedDrafts}
-          gameweek={gameweek}
-          busyId={draftBusyId}
-          onLoad={(d) => void openSavedDraft(d)}
-          onDelete={(d) => void deleteSavedDraft(d)}
-        />
-      )}
-
-      {/* Order is this week, then the horizon, then what already happened:
-          captaincy and the plan are decisions, the review is context. */}
-      {projections && (
-        <ChipPanel
-          chips={projections.chips}
-          transfers={projections.transfers}
-          gameweek={projections.gameweek}
-        />
-      )}
-
-      {projections?.review && <ReviewPanel review={projections.review} />}
-
-      {restoring && !projections && (
-        <Card className="p-5">
-          <p className="text-sm text-[--color-ink-muted]">
-            Restoring your saved squad…
-          </p>
-        </Card>
-      )}
-
-      {thinking && <AnalystProgress />}
-
-      {analysisError && !thinking && (
-        <Card className="p-5">
-          <p role="alert" className="text-sm leading-relaxed text-[--color-pink]">
-            {analysisError}
-          </p>
-          <p className="mt-2 text-sm text-[--color-ink-muted]">
-            The projections above are unaffected — they are computed here, not by
-            the analyst.
-          </p>
-        </Card>
-      )}
-
-      {!analysis && !thinking && savedAnalysis && projections && (
-        <AnalysisPanel
-          analysis={savedAnalysis.analysis}
-          gameweek={savedAnalysis.gameweek}
-          optimalPoints={projections.optimal.expectedPoints}
-          formation={projections.optimal.formationLabel}
-          cached
-          generatedAt={savedAnalysis.created_at}
-        />
-      )}
-
-      {analysis && projections && (
-        <AnalysisPanel
-          analysis={analysis.analysis}
-          gameweek={analysis.gameweek}
-          optimalPoints={projections.optimal.expectedPoints}
-          formation={projections.optimal.formationLabel}
-          cached={analysis.cached}
-          generatedAt={analysis.generatedAt}
-        />
-      )}
-
-      {/* One control, always reachable once projections exist. Previously a
-          restored analysis hid the "get one" button while never showing the
-          "regenerate" one, which left no way to re-run a squad at all. */}
-      {projections && !thinking && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            onClick={() =>
-              void runAnalysis({
-                ...(mode === "import" && entryId
-                  ? {
-                      entryId: Number(entryId),
-                      // A draft is re-analysed as a draft, not as the squad
-                      // it replaced.
-                      ...(draftMoves ? { transfers: draftMoves } : {}),
-                      ...(draftChip ? { chip: draftChip } : {}),
-                    }
-                  : { playerIds: projections.squad.map((p) => p.playerId) }),
-                // Force a fresh call only when something is already on screen.
-                // Otherwise the cache is exactly what we want to hit, for free.
-                refresh: Boolean(shownAnalysis),
-              })
-            }
-          >
-            {shownAnalysis ? "Re-run the analysis" : "Get the analyst's read"}
-          </Button>
-          {shownAnalysis && (
-            <span className="text-xs text-[--color-ink-muted]">
-              Uses one analysis from today&apos;s allowance.
-            </span>
-          )}
-        </div>
-      )}
-
-    </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -887,32 +1119,33 @@ function AnalystProgress() {
   }, []);
 
   return (
-    <Card className="p-5">
+    <Card className="p-5" tone="info">
       <div className="flex items-center gap-3">
-        <span
-          aria-hidden
-          className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[--color-cyan]"
-        />
-        <p className="text-sm font-semibold text-[--color-ink]">
+        <Tag tone="info">Working</Tag>
+        <p className="text-sm font-semibold text-ink">
           The analyst is reading your projections
         </p>
-        <span className="numeric ml-auto text-sm font-bold text-[--color-cyan]">
-          {seconds}s
-        </span>
+        <span className="display ml-auto text-lg text-cyan">{seconds}s</span>
       </div>
-      <p className="mt-2 text-sm leading-relaxed text-[--color-ink-muted]">
+      <p className="mt-2.5 text-sm leading-relaxed text-ink-muted">
         {seconds < 30
           ? "Usually 30–90 seconds. It reasons through captaincy, bench order and risks before answering."
           : "Still working. Longer squads and tighter calls take more thinking."}
       </p>
       <div
-        className="mt-3 h-1 overflow-hidden rounded-full bg-[--color-surface-3]"
+        className="relative mt-3 h-1 overflow-hidden rounded-full bg-surface-3"
         role="progressbar"
         aria-label="Analysis progress"
       >
         <div
           className="pl-rule h-full transition-[width] duration-1000 ease-linear"
           style={{ width: `${Math.min(95, (seconds / 60) * 100)}%` }}
+        />
+        {/* A band of light crossing the filled part, so a bar that has stopped
+            growing still reads as working rather than stuck. */}
+        <span
+          aria-hidden
+          className="animate-sweep absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent via-white/45 to-transparent"
         />
       </div>
     </Card>

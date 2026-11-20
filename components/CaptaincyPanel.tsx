@@ -32,7 +32,7 @@ export function CaptaincyPanel({
         Captaincy
       </SectionHeading>
 
-      <p className="mb-4 text-sm leading-relaxed text-[--color-ink-muted]">
+      <p className="mb-4 text-sm leading-relaxed text-ink-muted">
         The armband doubles the score, so it is a bet on the good week rather
         than the average one. The bar runs from a bad week to a good one, and
         the mark is the average.
@@ -53,27 +53,27 @@ export function CaptaincyPanel({
                   <span className={top ? "font-semibold" : ""}>
                     {c.player.webName}
                   </span>
-                  <span className="text-[11px] text-[--color-ink-faint]">
+                  <span className="text-[11px] text-ink-faint">
                     {c.player.team}
                   </span>
                   {top && (
-                    <span className="eyebrow rounded bg-[--color-accent]/15 px-1.5 py-0.5 text-[9px] text-[--color-accent]">
+                    <span className="eyebrow rounded bg-accent/15 px-1.5 py-0.5 text-[9px] text-accent">
                       highest ceiling
                     </span>
                   )}
                 </span>
-                <span className="numeric shrink-0 text-xs text-[--color-ink-muted]">
-                  <span className="font-semibold text-[--color-ink]">
+                <span className="numeric shrink-0 text-xs text-ink-muted">
+                  <span className="font-semibold text-ink">
                     {d.floor.toFixed(1)}–{d.ceiling.toFixed(1)}
                   </span>
-                  <span className="ml-2 text-[--color-ink-faint]">
+                  <span className="ml-2 text-ink-faint">
                     avg {d.mean.toFixed(1)}
                   </span>
                 </span>
               </div>
 
               <div
-                className="relative h-4 w-full overflow-hidden rounded bg-[--color-base]"
+                className="relative h-4 w-full overflow-hidden rounded bg-base"
                 title={`${c.player.webName}: bad week ${d.floor}, average ${d.mean}, good week ${d.ceiling}. Haul ${(d.pHaul * 100).toFixed(0)}%, blank ${(d.pBlank * 100).toFixed(0)}%.`}
               >
                 <span
@@ -89,14 +89,14 @@ export function CaptaincyPanel({
                 {/* The average, marked inside its own range. */}
                 <span
                   aria-hidden
-                  className="absolute inset-y-0 w-[2px] bg-[--color-base]"
+                  className="absolute inset-y-0 w-[2px] bg-base"
                   style={{ left: `${meanAt}%` }}
                 />
               </div>
 
-              <div className="flex gap-4 text-[11px] text-[--color-ink-faint]">
+              <div className="flex gap-4 text-[11px] text-ink-faint">
                 <span>
-                  <span className="numeric font-semibold text-[--color-accent]">
+                  <span className="numeric font-semibold text-accent">
                     {(d.pHaul * 100).toFixed(0)}%
                   </span>{" "}
                   chance of 10+
@@ -104,7 +104,7 @@ export function CaptaincyPanel({
                 <span>
                   <span
                     className={`numeric font-semibold ${
-                      d.pBlank > 0.15 ? "text-[--color-pink]" : "text-[--color-ink-muted]"
+                      d.pBlank > 0.15 ? "text-pink" : "text-ink-muted"
                     }`}
                   >
                     {(d.pBlank * 100).toFixed(0)}%

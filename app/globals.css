@@ -11,10 +11,26 @@
  *
  * Committed to a single dark theme on purpose: FPL is a dark product and a
  * half-hearted light mode would read as neither.
+ *
+ * Every token below is a `@theme` key, which is what makes `bg-surface`,
+ * `text-ink-muted` and `border-border` real utilities. Do not reach for the
+ * `bg-[--color-surface]` form: Tailwind v4 reads a bare variable in brackets
+ * literally and emits `background-color: --color-surface`, which is invalid CSS
+ * and silently dropped. That is how this app spent its first weeks with no card
+ * backgrounds at all. If a variable genuinely has no utility, write
+ * `bg-(--color-x)` with parentheses, or an inline style.
+ *
+ * `static` is load-bearing. Without it Tailwind emits only the tokens it can
+ * see used in the source, and a token read through a template literal —
+ * `var(--color-fdr-${level})`, which is how every fixture-difficulty colour in
+ * this app is read — is invisible to that scan. The variables were dropped from
+ * the stylesheet, so the pills fell back to transparent backgrounds with dark
+ * text on a dark card: the whole FDR scale, gone, with nothing failing loudly.
  */
-@theme {
-  /* Ground and elevation — four steps of purple, not grey. */
+@theme static {
+  /* Ground and elevation — five steps of purple, not grey. */
   --color-base: #16001a;
+  --color-base-deep: #0d0010;
   --color-surface: #250a2b;
   --color-surface-2: #33103a;
   --color-surface-3: #41174a;
@@ -47,6 +63,12 @@
   --color-danger: #ff2882;
   --color-warn: #ffb800;
 
+  /* Turf. Two greens and a line white, so the pitch is a token like anything
+     else rather than six hex codes buried in a component. */
+  --color-turf: #1f8a4c;
+  --color-turf-dark: #1a7542;
+  --color-turf-line: #ffffff;
+
   /**
    * Fixture difficulty, 1 (easiest) to 5 (hardest) — FPL's own scale, which
    * managers already read fluently. Deliberately not a red/green ramp: 3 is
@@ -60,10 +82,44 @@
 
   --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-barlow-condensed), var(--font-barlow), sans-serif;
+
+  /* One radius for panels, one for the things inside them. Two steps, so the
+     nesting reads as nesting. */
+  --radius-panel: 1.125rem;
+  --radius-inset: 0.625rem;
+
+  /* Panels arrive rather than appear. 180ms is under the threshold where a
+     transition starts to feel like a wait, and the whole thing is disabled
+     under prefers-reduced-motion below. */
+  --animate-rise: rise 0.18s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  --animate-sweep: sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The loading sweep: a band of light crossing a bar, which reads as "working"
+   where a pulse reads as "stalled". */
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
 }
 
 html {
   color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -72,10 +128,13 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 
-  /* Two faint washes of the brand colours, so the ground is not flat black. */
+  /* Three faint washes of the brand colours, so the ground is not flat black.
+     Fixed, so they belong to the window rather than scrolling with the page —
+     which is what keeps a long screen from looking like it has seams. */
   background-image:
-    radial-gradient(60rem 40rem at 15% -10%, rgba(255, 40, 130, 0.13), transparent 60%),
-    radial-gradient(50rem 36rem at 95% 0%, rgba(4, 245, 255, 0.09), transparent 60%);
+    radial-gradient(60rem 40rem at 15% -10%, rgba(255, 40, 130, 0.14), transparent 60%),
+    radial-gradient(50rem 36rem at 95% 0%, rgba(4, 245, 255, 0.1), transparent 60%),
+    radial-gradient(70rem 50rem at 50% 110%, rgba(0, 255, 135, 0.05), transparent 65%);
   background-attachment: fixed;
 }
 
@@ -103,6 +162,17 @@ body {
   line-height: 1;
 }
 
+/* Big numbers and big headings. Condensed, tight, and tabular, because every
+   headline in this app is either a scoreline or a verdict. */
+.display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.92;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The pink-to-cyan sweep that appears across Premier League graphics. Used
    sparingly: one rule per screen, never as a background for text. */
 .pl-rule {
@@ -114,18 +184,61 @@ body {
   );
 }
 
+/**
+ * Smoked glass, for the two bars that float over content: the scoreboard and
+ * the mobile action bar.
+ *
+ * The fallback matters more than the blur. Where backdrop-filter is missing or
+ * disabled the background stays nearly opaque, so text over a passing table
+ * never becomes unreadable — the blur is the enhancement, not the mechanism.
+ */
+.glass {
+  background-color: color-mix(in srgb, var(--color-base) 88%, transparent);
+  border-color: var(--color-border);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .glass {
+    background-color: color-mix(in srgb, var(--color-base) 72%, transparent);
+    backdrop-filter: blur(14px) saturate(1.3);
+  }
+}
+
+/**
+ * Turf.
+ *
+ * Mown stripes plus a vignette that darkens the far end, which is what stops a
+ * flat green rectangle from reading as a bad gradient. Drawn rather than imaged
+ * so the pitch stays self-contained and scales to any width.
+ */
+.turf {
+  background-color: var(--color-turf);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 28%, rgba(0, 0, 0, 0.3)),
+    repeating-linear-gradient(
+      180deg,
+      var(--color-turf) 0 11%,
+      var(--color-turf-dark) 11% 22%
+    );
+}
+
 /* Focus is visible everywhere, in a colour that never means "error". */
-:where(a, button, input, select, textarea):focus-visible {
+:where(a, button, input, select, textarea, [role="tab"]):focus-visible {
   outline: 2px solid var(--color-cyan);
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

@@ -44,23 +44,23 @@ export function PlanPanel({
 
       <div className="mb-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span
-          className={`numeric font-[family-name:--font-display] text-3xl font-bold leading-none ${
-            worthwhile ? "text-[--color-accent]" : "text-[--color-ink-muted]"
+          className={`numeric font-display text-3xl font-bold leading-none ${
+            worthwhile ? "text-accent" : "text-ink-muted"
           }`}
         >
           {plan.gain >= 0 ? "+" : ""}
           {plan.gain.toFixed(1)}
         </span>
-        <span className="text-sm text-[--color-ink-muted]">
+        <span className="text-sm text-ink-muted">
           points over leaving the squad alone
-          <span className="ml-1.5 text-[--color-ink-faint]">
+          <span className="ml-1.5 text-ink-faint">
             ({plan.totalPoints.toFixed(1)} against {plan.doNothingPoints.toFixed(1)})
           </span>
         </span>
       </div>
 
       {!worthwhile && (
-        <p className="mb-4 rounded-lg border border-[--color-cyan]/30 bg-[--color-cyan]/10 px-3.5 py-2.5 text-sm text-[--color-ink-muted]">
+        <p className="mb-4 rounded-lg border border-cyan/30 bg-cyan/10 px-3.5 py-2.5 text-sm text-ink-muted">
           Barely worth the moves. A plan worth this little over five gameweeks
           is a reason to hold, not a reason to act.
         </p>
@@ -77,68 +77,73 @@ export function PlanPanel({
                 <span
                   className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
                     banking
-                      ? "border border-[--color-border-bright] bg-[--color-base]"
-                      : "bg-[--color-accent]"
+                      ? "border border-border-bright bg-base"
+                      : "bg-accent"
                   }`}
                 />
-                {!last && <span className="w-px flex-1 bg-[--color-border]" />}
+                {!last && <span className="w-px flex-1 bg-border" />}
               </div>
 
               <div className={`flex-1 ${last ? "" : "pb-4"}`}>
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <span className="flex flex-wrap items-baseline gap-2">
-                    <span className="eyebrow text-[10px] text-[--color-ink-faint]">
+                    <span className="eyebrow text-[10px] text-ink-faint">
                       GW{m.gameweek}
                     </span>
                     {banking ? (
-                      <span className="text-sm text-[--color-ink-muted]">
+                      <span className="text-sm text-ink-muted">
                         Bank the transfer
                       </span>
                     ) : (
                       <span className="text-sm">
-                        <span className="text-[--color-pink]">
+                        <span className="text-pink">
                           {m.transfer!.outName}
                         </span>
-                        <span className="mx-1.5 text-[--color-ink-faint]">→</span>
-                        <span className="font-semibold text-[--color-accent]">
+                        <span className="mx-1.5 text-ink-faint">→</span>
+                        <span className="font-semibold text-accent">
                           {m.transfer!.inName}
                         </span>
                       </span>
                     )}
                     {m.hitCost > 0 && (
-                      <span className="eyebrow rounded bg-[--color-pink]/15 px-1.5 py-0.5 text-[9px] text-[--color-pink]">
+                      <span className="eyebrow rounded bg-pink/15 px-1.5 py-0.5 text-[9px] text-pink">
                         −{m.hitCost} hit
                       </span>
                     )}
                   </span>
-                  <span className="numeric shrink-0 text-xs text-[--color-ink-muted]">
+                  <span className="numeric shrink-0 text-xs text-ink-muted">
                     {m.expectedPoints.toFixed(1)} xPts
                   </span>
                 </div>
-                {/* The plan was already computed; making the manager re-find
-                    these two names in the picker is busywork. */}
-                {i === 0 && onTry && tryable && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onTry({ out: tryable.outId, in: tryable.inId })
-                    }
-                    className="mt-1.5 rounded-lg bg-[--color-cyan]/15 px-2.5 py-1 text-[11px] font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25"
-                  >
-                    Try this move
-                  </button>
-                )}
-                <span className="text-[11px] text-[--color-ink-faint]">
-                  {m.freeTransfers} free transfer
-                  {m.freeTransfers === 1 ? "" : "s"} in hand
-                </span>
+                {/* One row, because the button and the free-transfer count
+                    were both inline and ran into each other: "Try this
+                    move1 free transfer in hand". */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  {/* The plan was already computed; making the manager re-find
+                      these two names in the picker is busywork. */}
+                  {i === 0 && onTry && tryable && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onTry({ out: tryable.outId, in: tryable.inId })
+                      }
+                      className="rounded-lg bg-cyan/15 px-2.5 py-1 text-[11px] font-semibold text-cyan ring-1 ring-cyan/40 transition hover:bg-cyan/25"
+                    >
+                      Try this move
+                    </button>
+                  )}
+                  <span className="text-[11px] text-ink-faint">
+                    {m.freeTransfers} free transfer
+                    {m.freeTransfers === 1 ? "" : "s"} in hand
+                  </span>
+                </div>
               </div>
             </li>
           );
         })}
       </ol>
 
-      <p className="mt-4 border-t border-[--color-border] pt-3 text-xs leading-relaxed text-[--color-ink-faint]">
+      <p className="mt-4 border-t border-border pt-3 text-xs leading-relaxed text-ink-faint">
         {transfers} transfer{transfers === 1 ? "" : "s"} across{" "}
         {plan.moves.length} gameweeks
         {hits > 0 ? `, costing ${hits} points in hits` : ", none taking a hit"}.

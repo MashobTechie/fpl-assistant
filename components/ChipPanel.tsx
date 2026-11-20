@@ -61,7 +61,7 @@ function HorizonBars({
           <div key={w.gameweek} className="flex flex-1 flex-col items-center gap-1">
             <span
               className={`numeric text-[10px] font-bold leading-none ${
-                isPeak ? "text-[--color-mark-peak]" : "text-transparent"
+                isPeak ? "text-mark-peak" : "text-transparent"
               }`}
               aria-hidden
             >
@@ -87,20 +87,20 @@ function HorizonBars({
             <span
               className={`numeric text-[10px] leading-none ${
                 isNow
-                  ? "font-bold text-[--color-cyan]"
-                  : "text-[--color-ink-faint]"
+                  ? "font-bold text-cyan"
+                  : "text-ink-faint"
               }`}
             >
               {w.gameweek}
             </span>
             <span className="h-3 text-[9px] leading-none">
               {w.doubles > 0 && (
-                <span className="font-bold text-[--color-cyan]" title={`${w.doubles} players have two fixtures`}>
+                <span className="font-bold text-cyan" title={`${w.doubles} players have two fixtures`}>
                   DGW
                 </span>
               )}
               {w.blanks > 0 && w.doubles === 0 && (
-                <span className="font-bold text-[--color-pink]" title={`${w.blanks} players have no fixture`}>
+                <span className="font-bold text-pink" title={`${w.blanks} players have no fixture`}>
                   BGW
                 </span>
               )}
@@ -126,23 +126,23 @@ function ChipCard({
     <div
       className={`rounded-xl border p-4 ${
         chip.available
-          ? "border-[--color-border] bg-[--color-surface-2]"
-          : "border-[--color-border] bg-[--color-base] opacity-55"
+          ? "border-border bg-surface-2"
+          : "border-border bg-base opacity-55"
       }`}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="eyebrow text-[11px] text-[--color-ink]">{chip.label}</h3>
+        <h3 className="eyebrow text-[11px] text-ink">{chip.label}</h3>
         {chip.available ? (
           plottable && (
-            <span className="numeric text-sm font-bold text-[--color-ink]">
+            <span className="numeric text-sm font-bold text-ink">
               {chip.gain?.toFixed(1)}
-              <span className="ml-1 text-[10px] font-normal text-[--color-ink-faint]">
+              <span className="ml-1 text-[10px] font-normal text-ink-faint">
                 now
               </span>
             </span>
           )
         ) : (
-          <span className="eyebrow text-[9px] text-[--color-ink-faint]">spent</span>
+          <span className="eyebrow text-[9px] text-ink-faint">spent</span>
         )}
       </div>
 
@@ -154,14 +154,14 @@ function ChipCard({
         />
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-[--color-ink-muted]">
+      <p className="mt-3 text-xs leading-relaxed text-ink-muted">
         {chip.available ? chip.timing : "Already played this season."}
       </p>
 
       {chip.available && (
         <p
           className={`mt-2 text-xs font-semibold ${
-            playNow ? "text-[--color-mark-peak]" : "text-[--color-cyan]"
+            playNow ? "text-mark-peak" : "text-cyan"
           }`}
         >
           {playNow
@@ -192,13 +192,13 @@ export function ChipPanel({
         Chips &amp; transfers
       </SectionHeading>
 
-      <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-[--color-ink-muted]">
-        <span className="eyebrow rounded bg-[--color-surface-2] px-2 py-1 text-[10px] text-[--color-accent]">
+      <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+        <span className="eyebrow rounded bg-surface-2 px-2 py-1 text-[10px] text-accent">
           {transfers.free} free transfer{transfers.free === 1 ? "" : "s"}
         </span>
         Anything beyond that costs {transfers.hitCost} points.
         {transfers.inferred && (
-          <span className="text-[--color-ink-faint]">
+          <span className="text-ink-faint">
             Counted from your transfer history — FPL does not publish this
             without your login, so check it against the site.
           </span>

@@ -76,6 +76,13 @@ Nothing is ever sent to FPL — you still make the moves there yourself.
 
 ## Reading the output
 
+The screen leads with the call: what to do before the deadline, in at most three
+sentences and no jargon, with the one button that acts on it. Above it a bar
+follows the page down with the gameweek, a live countdown and the running
+totals. Everything else — the lineup, captaincy, transfers, chips, last week and
+the analyst's full read — sits behind a tab rail underneath, one panel at a
+time, so the decision never competes with the evidence for it.
+
 Every projection carries a **data basis** and a **confidence** score, both shown
 in the UI:
 

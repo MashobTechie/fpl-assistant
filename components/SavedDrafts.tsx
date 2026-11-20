@@ -37,17 +37,17 @@ export function SavedDrafts({
     <Card className="p-5 sm:p-6">
       <SectionHeading hint={`GW${gameweek}`}>Saved drafts</SectionHeading>
 
-      <ul className="flex flex-col divide-y divide-[--color-border]">
+      <ul className="flex flex-col divide-y divide-border">
         {forWeek.map((d) => {
           const busy = busyId === d.id;
           return (
             <li key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{d.name}</span>
-                <span className="text-[11px] text-[--color-ink-faint]">
+                <span className="text-[11px] text-ink-faint">
                   {d.transfers.length} move{d.transfers.length === 1 ? "" : "s"}
                   {d.chip && (
-                    <span className="ml-1.5 text-[--color-accent]">
+                    <span className="ml-1.5 text-accent">
                       · {d.chip === "wildcard" ? "Wildcard" : "Free Hit"}
                     </span>
                   )}
@@ -58,7 +58,7 @@ export function SavedDrafts({
                 type="button"
                 disabled={busy}
                 onClick={() => onLoad(d)}
-                className="rounded-lg bg-[--color-cyan]/15 px-3 py-1.5 text-xs font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 disabled:opacity-50"
+                className="rounded-lg bg-cyan/15 px-3 py-1.5 text-xs font-semibold text-cyan ring-1 ring-cyan/40 transition hover:bg-cyan/25 disabled:opacity-50"
               >
                 {busy ? "Checking…" : "Open"}
               </button>
@@ -66,7 +66,7 @@ export function SavedDrafts({
                 type="button"
                 disabled={busy}
                 onClick={() => onDelete(d)}
-                className="rounded-lg border border-[--color-border] px-2.5 py-1.5 text-xs text-[--color-ink-muted] transition hover:border-[--color-pink] hover:text-[--color-pink] disabled:opacity-50"
+                className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-ink-muted transition hover:border-pink hover:text-pink disabled:opacity-50"
                 aria-label={`Delete ${d.name}`}
               >
                 Delete
@@ -76,7 +76,7 @@ export function SavedDrafts({
         })}
       </ul>
 
-      <p className="mt-3 border-t border-[--color-border] pt-3 text-xs leading-relaxed text-[--color-ink-faint]">
+      <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-ink-faint">
         Opening a draft re-checks it against today&rsquo;s prices and
         today&rsquo;s projections, so what you see is the move as it stands
         now, not as it stood when you saved it.

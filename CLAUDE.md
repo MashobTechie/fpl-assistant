@@ -27,6 +27,32 @@ app makes. Two consequences to preserve:
   separates FPL scoring rules (fact) from tunable priors (FDR multipliers,
   clean-sheet probabilities, minutes priors). Tune there, not inline.
 
+## The screen
+
+Three layers, in the order someone reads them.
+
+1. **The scoreboard** ([components/Scoreboard.tsx](components/Scoreboard.tsx))
+   sticks to the top and holds the four facts that are true all session: which
+   gameweek, a live countdown to the deadline, what the XI is projected to
+   score, and what there is to spend. It replaced a grid of stat tiles that
+   restated the same numbers a third of the way down the page.
+2. **The call** ([components/TheCall.tsx](components/TheCall.tsx)) is the
+   verdict, in the largest type on the screen, with the one button that acts on
+   it. Deliberately not a `Card`: everything else is a card, so the thing that
+   must not read as a panel among panels gets its own chrome — a tone spine, a
+   wash in the tone colour, and no competition.
+3. **The desk** — the evidence, behind a tab rail: lineup, captain, transfers,
+   chips, last week, analyst. Before this it was nine panels stacked in one
+   scroll, every one of them equally loud, so the decision at the top competed
+   with chip valuations a thousand pixels below. Tabs are derived from the data
+   (no review for a manual squad, no analyst tab until one has been paid for)
+   and carry badges — the plan's gain, a chip whose week is this week, an
+   analysis that just landed — because the cost of hiding a panel is that you
+   stop noticing when it has something to say.
+
+The transfer sandbox takes the whole screen when it opens, and a draft replaces
+the call with its own verdict. Both are modes, not panels.
+
 ## Stack
 
 Next.js 16.3 (App Router, Turbopack) · React 19 · TypeScript · Tailwind v4 ·
@@ -48,6 +74,9 @@ app/api/drafts/     GET/POST/DELETE — saved drafts, per squad+gameweek
 app/api/cron/       GET  — scheduled snapshot; bearer CRON_SECRET, daily 03:00Z
 app/api/players/    GET — all ~600 players projected, for the manual picker
 app/dashboard/      the product
+components/         Scoreboard.tsx (the sticky bar + countdown), TheCall.tsx
+                    (the verdict hero), DashboardClient.tsx (the desk), ui.tsx
+                    (primitives: Card, Tag, TabRail, Metric, Button…)
 proxy.ts            auth redirects (Next 16 renamed middleware -> proxy)
 supabase/schema.sql profiles, squads, analyses, drafts — all under RLS
 supabase/migrations/  the same schema as ordered migrations; schema.sql is the
@@ -56,6 +85,20 @@ supabase/migrations/  the same schema as ordered migrations; schema.sql is the
 
 ## Things that will bite
 
+- **Tailwind v4 reads `bg-[--color-x]` literally.** The bracket form was the
+  v3 way to use a bare CSS variable; v4 compiles it to
+  `background-color: --color-surface`, which is invalid CSS and dropped
+  silently. Every structural colour in this app was written that way — 420
+  occurrences across 19 files — so cards had no background, no borders and no
+  muted text, and nothing ever failed. Because each token is a `@theme` key the
+  fix is the plain utility: `bg-surface`, `text-ink-muted`, `border-border`. If
+  a variable has no utility, use parentheses: `bg-(--color-x)`.
+- **`@theme static` is load-bearing, not decoration.** Tailwind only emits the
+  tokens it can see used in the source, and a token read through a template
+  literal — `var(--color-fdr-${level})`, which is how every fixture-difficulty
+  colour is read — is invisible to that scan. The variables never reached the
+  stylesheet, so the FDR pills fell back to transparent backgrounds with dark
+  text on a dark card: the whole 1-to-5 scale, blank. `static` emits them all.
 - **Next 16 renamed `middleware` to `proxy`.** A `middleware.ts` file still
   builds but warns. The convention here is `proxy.ts` exporting `proxy`.
 - **The FPL API sends no CORS headers.** Never import `lib/fpl/client` into a
@@ -210,6 +253,20 @@ it does not collide with another project's stack.
 Built and verified against live FPL data: FPL client, projection engine, XI
 optimiser, squad resolution, all four API routes, auth, and the full dashboard
 UI. Build, lint, typecheck, 34 unit tests and 17 smoke checks pass.
+
+**Rebuilt 2026-11-20: the interface.** The dashboard leads with the verdict and
+keeps the evidence behind a tab rail; a sticky scoreboard carries the gameweek,
+a live deadline countdown and the running totals. Verified by screenshot at
+1280px and 390px against real GW11 projections — first run, squad loaded, each
+tab, a draft, and the sandbox.
+
+That pass also found three silent rendering failures, all of the same family and
+all invisible to the build: `bg-[--color-x]` compiling to invalid CSS in
+Tailwind v4 (420 occurrences, so no card had a background), `@theme` dropping
+the FDR colour variables because they are only read through a template literal,
+and a button overlapping its own caption in the plan. The first two are in
+"Things that will bite"; the lesson behind them is that this stack fails
+*quietly* in CSS, so a visual change wants a screenshot and not a green build.
 
 Verified 2026-11-20 against a local Supabase, through the HTTP routes with a
 real session cookie: auth guards, squad persistence, saved drafts (save, list,

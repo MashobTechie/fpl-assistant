@@ -17,7 +17,7 @@ export function AuthForm({ mode, action }: Props) {
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="email" className="eyebrow text-[11px] text-[--color-ink-faint]">
+        <label htmlFor="email" className="eyebrow text-[11px] text-ink-faint">
           Email
         </label>
         <input
@@ -26,12 +26,12 @@ export function AuthForm({ mode, action }: Props) {
           type="email"
           autoComplete="email"
           required
-          className="rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-3 text-[--color-ink] outline-none transition focus:border-[--color-cyan]"
+          className="rounded-lg border border-border bg-base px-3.5 py-3 text-ink outline-none transition focus:border-cyan"
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="password" className="eyebrow text-[11px] text-[--color-ink-faint]">
+        <label htmlFor="password" className="eyebrow text-[11px] text-ink-faint">
           Password
         </label>
         <input
@@ -41,17 +41,17 @@ export function AuthForm({ mode, action }: Props) {
           autoComplete={isSignUp ? "new-password" : "current-password"}
           required
           minLength={isSignUp ? 8 : undefined}
-          className="rounded-lg border border-[--color-border] bg-[--color-base] px-3.5 py-3 text-[--color-ink] outline-none transition focus:border-[--color-cyan]"
+          className="rounded-lg border border-border bg-base px-3.5 py-3 text-ink outline-none transition focus:border-cyan"
         />
         {isSignUp && (
-          <p className="text-xs text-[--color-ink-faint]">At least 8 characters.</p>
+          <p className="text-xs text-ink-faint">At least 8 characters.</p>
         )}
       </div>
 
       {state.error && (
         <p
           role="alert"
-          className="rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-2.5 text-sm text-[--color-pink]"
+          className="rounded-lg border border-pink/40 bg-pink/10 px-3.5 py-2.5 text-sm text-pink"
         >
           {state.error}
         </p>
@@ -60,16 +60,16 @@ export function AuthForm({ mode, action }: Props) {
       <button
         type="submit"
         disabled={pending}
-        className="mt-1 rounded-lg bg-[--color-accent] px-4 py-3 font-semibold text-[--color-base] transition hover:bg-[--color-accent-dim] active:translate-y-px disabled:opacity-60"
+        className="mt-1 rounded-lg bg-accent px-4 py-3 font-semibold text-base transition hover:bg-accent-dim active:translate-y-px disabled:opacity-60"
       >
         {pending ? "Working…" : isSignUp ? "Create account" : "Sign in"}
       </button>
 
-      <p className="text-center text-sm text-[--color-ink-muted]">
+      <p className="text-center text-sm text-ink-muted">
         {isSignUp ? "Already have an account? " : "No account yet? "}
         <Link
           href={isSignUp ? "/login" : "/signup"}
-          className="font-semibold text-[--color-cyan] hover:underline"
+          className="font-semibold text-cyan hover:underline"
         >
           {isSignUp ? "Sign in" : "Sign up"}
         </Link>

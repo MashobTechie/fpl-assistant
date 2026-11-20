@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { signOut } from "@/app/auth/actions";
 import { DashboardClient } from "@/components/DashboardClient";
+import { Tag } from "@/components/ui";
 import { getBootstrap, resolveTargetGameweek } from "@/lib/fpl/client";
 import { PROJECTION_ENGINE_VERSION } from "@/lib/projections/constants";
 import { squadHash } from "@/lib/squad/validate";
@@ -70,33 +71,42 @@ export default async function DashboardPage() {
       : null;
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
-      <header className="mb-7">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="min-h-screen pb-16">
+      {/* The league's rule across the very top of the page. One per screen,
+          and this is the screen's. */}
+      <span aria-hidden className="pl-rule block h-[3px] w-full" />
+
+      {/* The title card. The scoreboard below it carries the countdown, so this
+          carries the absolute date — the two answer different questions and a
+          manager asks both: "how long have I got" and "which evening is it". */}
+      <header className="mx-auto max-w-5xl px-4 pb-6 pt-7 sm:px-6 sm:pb-8 sm:pt-9">
+        <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
-              <span aria-hidden className="pl-rule h-4 w-1 rounded-full" />
-              <p className="eyebrow text-[11px] text-[--color-accent]">
-                FPL Assistant
-              </p>
+              <span
+                aria-hidden
+                className="h-3.5 w-[3px] rounded-full bg-accent"
+              />
+              <p className="eyebrow text-[11px] text-accent">FPL Assistant</p>
             </div>
-            <h1 className="mt-2.5 font-[family-name:--font-display] text-4xl font-bold uppercase leading-none tracking-tight sm:text-5xl">
-              {gameweek ? `Gameweek ${gameweek}` : "Dashboard"}
+
+            <h1 className="display mt-3 text-5xl sm:text-7xl">
+              {gameweek ? (
+                <>
+                  <span className="text-ink-faint">Gameweek </span>
+                  <span className="text-ink">{gameweek}</span>
+                </>
+              ) : (
+                "Dashboard"
+              )}
             </h1>
-            {liveGameweek !== null && (
-              <p className="mt-2 text-sm text-[--color-ink-muted]">
-                Gameweek {liveGameweek} is locked and under way — this is your
-                next deadline.
-              </p>
-            )}
+
             {deadline && (
-              <p className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-[--color-ink-muted]">
-                <span className="eyebrow rounded bg-[--color-surface-2] px-2 py-1 text-[10px] text-[--color-cyan]">
-                  Deadline
-                </span>
-                <time dateTime={deadline} className="numeric">
+              <p className="mt-4 flex flex-wrap items-center gap-2.5 text-sm text-ink-muted">
+                <Tag tone="info">Deadline</Tag>
+                <time dateTime={deadline} className="numeric font-semibold text-ink">
                   {new Date(deadline).toLocaleString(undefined, {
-                    weekday: "short",
+                    weekday: "long",
                     day: "numeric",
                     month: "short",
                     hour: "2-digit",
@@ -105,11 +115,19 @@ export default async function DashboardPage() {
                 </time>
               </p>
             )}
+
+            {liveGameweek !== null && (
+              <p className="mt-3 max-w-prose text-sm leading-relaxed text-ink-faint">
+                Gameweek {liveGameweek} is locked and under way — this is your
+                next deadline.
+              </p>
+            )}
           </div>
+
           <form action={signOut}>
             <button
               type="submit"
-              className="rounded-lg border border-[--color-border] px-3.5 py-2 text-sm font-medium text-[--color-ink-muted] transition hover:border-[--color-border-bright] hover:text-[--color-ink]"
+              className="rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-ink-muted transition hover:border-border-bright hover:text-ink"
             >
               Sign out
             </button>
@@ -124,7 +142,8 @@ export default async function DashboardPage() {
         savedAnalysis={savedAnalysis ?? null}
         nextGameweek={gameweek}
         liveGameweek={liveGameweek}
+        deadline={deadline ?? null}
       />
-    </main>
+    </div>
   );
 }

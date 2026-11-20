@@ -59,7 +59,7 @@ export function DraftVerdict({
       </SectionHeading>
 
       <p className="mb-4 flex items-center gap-2 text-sm">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[--color-accent] text-[11px] font-bold text-[--color-base]">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-base">
           ✓
         </span>
         <span>
@@ -76,7 +76,7 @@ export function DraftVerdict({
       </p>
 
       {draft.chipWarning && (
-        <p className="mb-4 rounded-lg bg-[--color-cyan]/10 px-3.5 py-2.5 text-sm text-[--color-ink-muted]">
+        <p className="mb-4 rounded-lg bg-cyan/10 px-3.5 py-2.5 text-sm text-ink-muted">
           {draft.chipWarning}
         </p>
       )}
@@ -85,13 +85,13 @@ export function DraftVerdict({
         {draft.moves.map((m) => (
           <li key={m.out.playerId} className="text-sm">
             <span className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-[--color-pink]">{m.out.name}</span>
-              <span className="text-[11px] text-[--color-ink-faint]">
+              <span className="text-pink">{m.out.name}</span>
+              <span className="text-[11px] text-ink-faint">
                 £{m.out.price.toFixed(1)}m
               </span>
-              <span className="text-[--color-ink-faint]">→</span>
-              <span className="font-semibold text-[--color-accent]">{m.in.name}</span>
-              <span className="text-[11px] text-[--color-ink-faint]">
+              <span className="text-ink-faint">→</span>
+              <span className="font-semibold text-accent">{m.in.name}</span>
+              <span className="text-[11px] text-ink-faint">
                 {m.in.team} · £{m.in.price.toFixed(1)}m
               </span>
             </span>
@@ -141,10 +141,10 @@ export function DraftVerdict({
       <p
         className={`mt-4 rounded-lg px-3.5 py-2.5 text-sm ${
           worth
-            ? "bg-[--color-accent]/10 text-[--color-ink]"
+            ? "bg-accent/10 text-ink"
             : marginal
-              ? "bg-[--color-cyan]/10 text-[--color-ink-muted]"
-              : "bg-[--color-pink]/10 text-[--color-ink]"
+              ? "bg-cyan/10 text-ink-muted"
+              : "bg-pink/10 text-ink"
         }`}
       >
         {worth
@@ -154,7 +154,7 @@ export function DraftVerdict({
               ? `${sign(decisive)} over ${over} — short of the ${bar} points a ${chipLabel} should earn. There are two in a season; hold it for a week that needs one.`
               : "About level. Not worth spending a transfer on — banking it keeps the option for a better move."
             : `Costs you ${Math.abs(decisive).toFixed(1)} over ${over}${draft.hitCost ? " once the hit is counted" : ""}. The squad is better as it is.`}{" "}
-        <span className="text-[--color-ink-faint]">
+        <span className="text-ink-faint">
           Best lineup each week with the armband, before vs after.
         </span>
       </p>
@@ -164,7 +164,7 @@ export function DraftVerdict({
       <Odds odds={c.odds} hit={draft.hitCost} />
 
       {draft.hitUnknown && (
-        <p className="mt-3 text-xs leading-relaxed text-[--color-ink-faint]">
+        <p className="mt-3 text-xs leading-relaxed text-ink-faint">
           This squad was built here rather than imported, so there is no FPL
           history to read a free-transfer count from. The figures above are the
           points change before any hit — if these moves cost you one, subtract
@@ -177,14 +177,14 @@ export function DraftVerdict({
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-lg border border-[--color-border] px-3.5 py-2 text-sm font-medium text-[--color-ink-muted] transition hover:border-[--color-cyan] hover:text-[--color-cyan]"
+          className="rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-ink-muted transition hover:border-cyan hover:text-cyan"
         >
           Change the moves
         </button>
         <button
           type="button"
           onClick={onBack}
-          className="rounded-lg border border-[--color-border] px-3.5 py-2 text-sm font-medium text-[--color-ink-muted] transition hover:border-[--color-border-bright] hover:text-[--color-ink]"
+          className="rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-ink-muted transition hover:border-border-bright hover:text-ink"
         >
           Back to my squad
         </button>
@@ -213,12 +213,12 @@ function SaveDraft({
 
   if (save.savedAs && !open) {
     return (
-      <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-[--color-ink-muted]">
-        <span className="text-[--color-accent]">Saved</span> as “{save.savedAs}”.
+      <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+        <span className="text-accent">Saved</span> as “{save.savedAs}”.
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="text-xs text-[--color-ink-faint] underline hover:text-[--color-ink]"
+          className="text-xs text-ink-faint underline hover:text-ink"
         >
           Save under another name
         </button>
@@ -232,7 +232,7 @@ function SaveDraft({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-lg border border-[--color-border] px-3.5 py-2 text-sm font-medium text-[--color-ink-muted] transition hover:border-[--color-cyan] hover:text-[--color-cyan]"
+          className="rounded-lg border border-border px-3.5 py-2 text-sm font-medium text-ink-muted transition hover:border-cyan hover:text-cyan"
         >
           Save this draft
         </button>
@@ -242,10 +242,10 @@ function SaveDraft({
 
   const trimmed = name.trim();
   return (
-    <div className="mt-4 rounded-xl border border-[--color-border-bright] bg-[--color-surface-2] p-3">
+    <div className="mt-4 rounded-xl border border-border-bright bg-surface-2 p-3">
       <label
         htmlFor="draft-name"
-        className="eyebrow mb-1.5 block text-[9px] text-[--color-ink-faint]"
+        className="eyebrow mb-1.5 block text-[9px] text-ink-faint"
       >
         Call it something you will recognise
       </label>
@@ -260,13 +260,13 @@ function SaveDraft({
             if (e.key === "Enter" && trimmed) save.onSave(trimmed);
             if (e.key === "Escape") setOpen(false);
           }}
-          className="min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-base] px-3 py-2 text-sm outline-none focus:border-[--color-cyan]"
+          className="min-w-0 flex-1 rounded-lg border border-border bg-base px-3 py-2 text-sm outline-none focus:border-cyan"
         />
         <button
           type="button"
           disabled={!trimmed || save.saving}
           onClick={() => save.onSave(trimmed)}
-          className="rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 disabled:opacity-50"
+          className="rounded-lg bg-cyan/15 px-3.5 py-2 text-sm font-semibold text-cyan ring-1 ring-cyan/40 transition hover:bg-cyan/25 disabled:opacity-50"
         >
           {save.saving ? "Saving…" : "Save"}
         </button>
@@ -274,17 +274,17 @@ function SaveDraft({
           type="button"
           onClick={() => setOpen(false)}
           disabled={save.saving}
-          className="rounded-lg border border-[--color-border] px-3 py-2 text-sm text-[--color-ink-muted] transition hover:text-[--color-ink]"
+          className="rounded-lg border border-border px-3 py-2 text-sm text-ink-muted transition hover:text-ink"
         >
           Cancel
         </button>
       </div>
       {save.error && (
-        <p role="alert" className="mt-2 text-sm text-[--color-pink]">
+        <p role="alert" className="mt-2 text-sm text-pink">
           {save.error}
         </p>
       )}
-      <p className="mt-2 text-[11px] text-[--color-ink-faint]">
+      <p className="mt-2 text-[11px] text-ink-faint">
         Reusing a name saves over that draft. Nothing is sent to FPL, now or
         later — a saved draft is a note to yourself.
       </p>
@@ -333,16 +333,16 @@ function Odds({
     <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
       <span
         className={`numeric font-semibold ${
-          confident ? "text-[--color-accent]" : "text-[--color-ink]"
+          confident ? "text-accent" : "text-ink"
         }`}
       >
         {percent}%
       </span>
-      <span className="text-[--color-ink-muted]">
+      <span className="text-ink-muted">
         of the time this gameweek{hit > 0 ? ", after the hit" : ""}.
         {coinToss && " Close to a coin toss — the gain is inside the noise."}
       </span>
-      <span className="text-[11px] text-[--color-ink-faint]">
+      <span className="text-[11px] text-ink-faint">
         Middle 80% of outcomes: {odds.floor >= 0 ? "+" : ""}
         {odds.floor.toFixed(1)} to {odds.ceiling >= 0 ? "+" : ""}
         {odds.ceiling.toFixed(1)}.
@@ -390,7 +390,7 @@ function Timing({ out, in: incoming }: { out: DraftPlayer; in: DraftPlayer }) {
   if (notes.length === 0) return null;
 
   return (
-    <span className="mt-0.5 block text-[11px] leading-relaxed text-[--color-cyan]">
+    <span className="mt-0.5 block text-[11px] leading-relaxed text-cyan">
       {notes.join(". ")}. Prices change overnight and FPL does not publish how
       it decides, so this is the direction of travel, not a forecast.
     </span>

@@ -264,8 +264,8 @@ export function TransferSandbox({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-[--color-ink-muted]">
-        Tap <span className="font-bold text-[--color-pink]">×</span> on a shirt to
+      <p className="text-sm leading-relaxed text-ink-muted">
+        Tap <span className="font-bold text-pink">×</span> on a shirt to
         sell him, then pick who comes in. Nothing changes in FPL — this only
         checks whether you could make the moves, and whether they are worth it.
       </p>
@@ -280,18 +280,18 @@ export function TransferSandbox({
       />
 
       {picking && (
-        <div className="rounded-xl border border-[--color-border-bright] bg-[--color-surface-2] p-3">
+        <div className="rounded-xl border border-border-bright bg-surface-2 p-3">
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-sm">
               Replacing <span className="font-semibold">{picking.webName}</span>
-              <span className="ml-1.5 text-[--color-ink-faint]">
+              <span className="ml-1.5 text-ink-faint">
                 · sells for £{(economics.sellPrice[picking.playerId] ?? picking.cost).toFixed(1)}m
               </span>
             </p>
             <button
               type="button"
               onClick={() => setPicking(null)}
-              className="text-xs text-[--color-ink-muted] hover:text-[--color-ink]"
+              className="text-xs text-ink-muted hover:text-ink"
             >
               Close
             </button>
@@ -303,7 +303,7 @@ export function TransferSandbox({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${picking.position} by name or club…`}
-            className="mb-2 w-full rounded-lg border border-[--color-border] bg-[--color-base] px-3 py-2 text-sm outline-none focus:border-[--color-cyan]"
+            className="mb-2 w-full rounded-lg border border-border bg-base px-3 py-2 text-sm outline-none focus:border-cyan"
           />
 
           <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -316,31 +316,31 @@ export function TransferSandbox({
                   title={SORTS[key].hint}
                   className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
                     sort === key
-                      ? "bg-[--color-cyan]/15 text-[--color-cyan] ring-1 ring-[--color-cyan]/40"
-                      : "text-[--color-ink-muted] hover:text-[--color-ink]"
+                      ? "bg-cyan/15 text-cyan ring-1 ring-cyan/40"
+                      : "text-ink-muted hover:text-ink"
                   }`}
                 >
                   {SORTS[key].label}
                 </button>
               ))}
             </div>
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[--color-ink-muted]">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-muted">
               <input
                 type="checkbox"
                 checked={affordableOnly}
                 onChange={(e) => setAffordableOnly(e.target.checked)}
-                className="h-3.5 w-3.5 accent-[--color-cyan]"
+                className="h-3.5 w-3.5 accent-cyan"
               />
               Only what I can afford
             </label>
           </div>
 
-          {loadError && <p className="text-sm text-[--color-pink]">{loadError}</p>}
+          {loadError && <p className="text-sm text-pink">{loadError}</p>}
           {!players && !loadError && (
-            <p className="text-sm text-[--color-ink-muted]">Loading players…</p>
+            <p className="text-sm text-ink-muted">Loading players…</p>
           )}
 
-          <ul className="max-h-72 divide-y divide-[--color-border] overflow-y-auto rounded-lg border border-[--color-border]">
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {options.map((p) => {
               const left = bankAfter(p);
               const cantAfford = left < -0.001;
@@ -362,33 +362,33 @@ export function TransferSandbox({
                             ? `£${Math.abs(left).toFixed(1)}m short`
                             : undefined
                     }
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-[--color-surface-3] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">
                         {p.name}
                         {p.status !== "a" && (
-                          <span className="ml-1 text-[--color-pink]" title={p.risks[0]}>
+                          <span className="ml-1 text-pink" title={p.risks[0]}>
                             ⚠
                           </span>
                         )}
                       </span>
-                      <span className="text-[11px] text-[--color-ink-faint]">
+                      <span className="text-[11px] text-ink-faint">
                         {p.team} · {p.minutes}′ ·{" "}
                         {cantAfford ? (
-                          <span className="text-[--color-pink]">£{Math.abs(left).toFixed(1)}m short</span>
+                          <span className="text-pink">£{Math.abs(left).toFixed(1)}m short</span>
                         ) : clubFull ? (
-                          <span className="text-[--color-pink]">club full</span>
+                          <span className="text-pink">club full</span>
                         ) : (
                           <>£{left.toFixed(1)}m left</>
                         )}
                       </span>
                     </span>
-                    <span className="numeric w-14 text-right text-[--color-ink-muted]">
+                    <span className="numeric w-14 text-right text-ink-muted">
                       £{p.cost.toFixed(1)}m
                     </span>
                     <span
-                      className="numeric w-12 text-right font-semibold text-[--color-accent]"
+                      className="numeric w-12 text-right font-semibold text-accent"
                       title={`Expected points over the next ${projections.horizon} gameweeks`}
                     >
                       {p.horizon.toFixed(1)}
@@ -398,12 +398,12 @@ export function TransferSandbox({
               );
             })}
             {players && options.length === 0 && (
-              <li className="px-3 py-4 text-sm text-[--color-ink-muted]">
+              <li className="px-3 py-4 text-sm text-ink-muted">
                 No {picking.position} matches “{query}”.
               </li>
             )}
           </ul>
-          <p className="mt-2 text-[11px] text-[--color-ink-faint]">
+          <p className="mt-2 text-[11px] text-ink-faint">
             Right-hand number: expected points over the next {projections.horizon}{" "}
             gameweeks.
             {matches.length > PICKER_LIMIT && (
@@ -442,7 +442,7 @@ export function TransferSandbox({
       {problems.length > 0 && summary.count > 0 && (
         <ul className="flex flex-col gap-1.5">
           {problems.map((p) => (
-            <li key={p} className="text-sm text-[--color-pink]">
+            <li key={p} className="text-sm text-pink">
               {p}
             </li>
           ))}
@@ -452,7 +452,7 @@ export function TransferSandbox({
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-[--color-pink]/40 bg-[--color-pink]/10 px-3.5 py-2.5 text-sm text-[--color-pink]"
+          className="rounded-lg border border-pink/40 bg-pink/10 px-3.5 py-2.5 text-sm text-pink"
         >
           {error}
         </p>
@@ -525,8 +525,8 @@ function ChipChoice({
     chips.find((c) => c.chip === id)?.available === false;
 
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-base] p-3">
-      <div className="eyebrow mb-2 text-[9px] text-[--color-ink-faint]">
+    <div className="rounded-xl border border-border bg-base p-3">
+      <div className="eyebrow mb-2 text-[9px] text-ink-faint">
         Playing a chip?
       </div>
       <div className="flex flex-wrap gap-2">
@@ -535,8 +535,8 @@ function ChipChoice({
           onClick={() => onChange(null)}
           className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
             chip === null
-              ? "border-[--color-cyan] text-[--color-cyan]"
-              : "border-[--color-border] text-[--color-ink-muted] hover:text-[--color-ink]"
+              ? "border-cyan text-cyan"
+              : "border-border text-ink-muted hover:text-ink"
           }`}
         >
           No chip
@@ -548,19 +548,19 @@ function ChipChoice({
             onClick={() => onChange(chip === o.id ? null : o.id)}
             className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
               chip === o.id
-                ? "border-[--color-accent] text-[--color-accent]"
-                : "border-[--color-border] text-[--color-ink-muted] hover:text-[--color-ink]"
+                ? "border-accent text-accent"
+                : "border-border text-ink-muted hover:text-ink"
             }`}
           >
             {o.label}
             {spent(o.id) && (
-              <span className="ml-1 text-[--color-ink-faint]">· used</span>
+              <span className="ml-1 text-ink-faint">· used</span>
             )}
           </button>
         ))}
       </div>
       {chip && (
-        <p className="mt-2 text-[11px] leading-relaxed text-[--color-ink-faint]">
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
           {options.find((o) => o.id === chip)!.note}
           {spent(chip) &&
             " Your history already shows one played this season — fine if that was your first-half chip."}
@@ -582,16 +582,16 @@ function Tally({
   tone?: "default" | "bad";
 }) {
   return (
-    <div className="rounded-lg border border-[--color-border] bg-[--color-base] px-3 py-2">
-      <div className="eyebrow text-[9px] text-[--color-ink-faint]">{label}</div>
+    <div className="rounded-lg border border-border bg-base px-3 py-2">
+      <div className="eyebrow text-[9px] text-ink-faint">{label}</div>
       <div
         className={`numeric mt-1 text-lg font-bold leading-none ${
-          tone === "bad" ? "text-[--color-pink]" : "text-[--color-ink]"
+          tone === "bad" ? "text-pink" : "text-ink"
         }`}
       >
         {value}
       </div>
-      {sub && <div className="mt-1 text-[10px] text-[--color-ink-faint]">{sub}</div>}
+      {sub && <div className="mt-1 text-[10px] text-ink-faint">{sub}</div>}
     </div>
   );
 }

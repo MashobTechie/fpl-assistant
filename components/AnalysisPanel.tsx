@@ -11,24 +11,24 @@ function CaptainCard({
   role: "Captain" | "Vice-captain";
 }) {
   return (
-    <div className="rounded-xl border border-[--color-border] bg-[--color-surface-2] p-4 sm:p-5">
+    <div className="rounded-xl border border-border bg-surface-2 p-4 sm:p-5">
       <div className="flex items-baseline justify-between">
-        <span className="eyebrow text-[10px] text-[--color-cyan]">
+        <span className="eyebrow text-[10px] text-cyan">
           {role}
         </span>
       </div>
-      <p className="mt-1.5 font-[family-name:--font-display] text-3xl font-bold uppercase leading-none tracking-tight text-[--color-accent]">{pick.name}</p>
-      <p className="mt-2 text-sm leading-relaxed text-[--color-ink-muted]">
+      <p className="mt-1.5 font-display text-3xl font-bold uppercase leading-none tracking-tight text-accent">{pick.name}</p>
+      <p className="mt-2 text-sm leading-relaxed text-ink-muted">
         {pick.reasoning}
       </p>
       <dl className="mt-3 space-y-1.5 text-xs">
         <div className="flex gap-2">
-          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-[--color-ink-faint]">Ceiling</dt>
-          <dd className="text-[--color-ink-muted]">{pick.ceiling}</dd>
+          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-ink-faint">Ceiling</dt>
+          <dd className="text-ink-muted">{pick.ceiling}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-[--color-ink-faint]">Risk</dt>
-          <dd className="text-[--color-ink-muted]">{pick.risk}</dd>
+          <dt className="eyebrow shrink-0 pt-0.5 text-[9px] text-ink-faint">Risk</dt>
+          <dd className="text-ink-muted">{pick.risk}</dd>
         </div>
       </dl>
     </div>
@@ -60,7 +60,7 @@ export function AnalysisPanel({
             {cached && (
               <span
                 title={`Generated ${new Date(generatedAt).toLocaleString()}`}
-                className="text-[11px] text-[--color-ink-faint]"
+                className="text-[11px] text-ink-faint"
               >
                 cached
               </span>
@@ -88,7 +88,7 @@ export function AnalysisPanel({
           />
         </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-[--color-ink-muted]">
+        <p className="mt-4 text-sm leading-relaxed text-ink-muted">
           {analysis.confidenceReasoning}
         </p>
       </Card>
@@ -100,14 +100,14 @@ export function AnalysisPanel({
 
       <Card className="p-5">
         <SectionHeading>The decision this week</SectionHeading>
-        <p className="text-sm leading-relaxed text-[--color-ink]">
+        <p className="text-sm leading-relaxed text-ink">
           {analysis.keyTradeoff}
         </p>
       </Card>
 
       <Card className="p-5">
         <SectionHeading hint="against the projection-optimal XI">Lineup</SectionHeading>
-        <p className="text-sm leading-relaxed text-[--color-ink-muted]">
+        <p className="text-sm leading-relaxed text-ink-muted">
           {analysis.lineupVerdict}
         </p>
 
@@ -116,22 +116,22 @@ export function AnalysisPanel({
             {analysis.lineupChanges.map((c) => (
               <li
                 key={`${c.benchPlayerId}-${c.startPlayerId}`}
-                className="rounded-lg border border-[--color-warn]/30 bg-[--color-warn]/5 p-3 text-sm"
+                className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm"
               >
                 <p className="font-medium">
-                  <span className="text-[--color-pink]">{c.benchPlayerName}</span>
+                  <span className="text-pink">{c.benchPlayerName}</span>
                   {" → bench, "}
-                  <span className="text-[--color-accent]">{c.startPlayerName}</span>
+                  <span className="text-accent">{c.startPlayerName}</span>
                   {" → start"}
                 </p>
-                <p className="mt-1 text-[--color-ink-muted]">{c.reasoning}</p>
+                <p className="mt-1 text-ink-muted">{c.reasoning}</p>
               </li>
             ))}
           </ul>
         )}
 
-        <p className="mt-4 border-t border-[--color-border] pt-3 text-sm leading-relaxed text-[--color-ink-muted]">
-          <span className="font-semibold text-[--color-ink-faint]">Bench order: </span>
+        <p className="mt-4 border-t border-border pt-3 text-sm leading-relaxed text-ink-muted">
+          <span className="font-semibold text-ink-faint">Bench order: </span>
           {analysis.benchOrderReasoning}
         </p>
       </Card>
@@ -144,8 +144,8 @@ export function AnalysisPanel({
           <ul className="space-y-2.5">
             {analysis.boomCandidates.map((b) => (
               <li key={b.playerId} className="text-sm">
-                <span className="font-semibold text-[--color-violet]">{b.name}</span>
-                <span className="text-[--color-ink-muted]"> — {b.reasoning}</span>
+                <span className="font-semibold text-cyan">{b.name}</span>
+                <span className="text-ink-muted"> — {b.reasoning}</span>
               </li>
             ))}
           </ul>
@@ -160,7 +160,7 @@ export function AnalysisPanel({
               <li key={r.playerId} className="flex flex-wrap items-baseline gap-2 text-sm">
                 <Severity level={r.severity} />
                 <span className="font-semibold">{r.name}</span>
-                <span className="text-[--color-ink-muted]">{r.issue}</span>
+                <span className="text-ink-muted">{r.issue}</span>
               </li>
             ))}
           </ul>
@@ -176,13 +176,13 @@ export function AnalysisPanel({
             {analysis.transferIdeas.map((t) => (
               <li
                 key={`${t.outPlayerId}-${t.inPlayerId}`}
-                className="rounded-lg border border-[--color-border] bg-[--color-surface-2] p-3 text-sm"
+                className="rounded-lg border border-border bg-surface-2 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[--color-pink]">{t.outName}</span>
-                  <span className="text-[--color-ink-faint]">→</span>
-                  <span className="font-semibold text-[--color-accent]">{t.inName}</span>
-                  <span className="rounded bg-[--color-surface] px-1.5 py-0.5 text-[11px] text-[--color-ink-faint]">
+                  <span className="text-pink">{t.outName}</span>
+                  <span className="text-ink-faint">→</span>
+                  <span className="font-semibold text-accent">{t.inName}</span>
+                  <span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-ink-faint">
                     {t.horizon === "short_term" ? "1–3 GW" : "5–10 GW"}
                   </span>
                 </div>
@@ -191,28 +191,28 @@ export function AnalysisPanel({
                     for anyone who wants the working, rather than competing
                     with it for the same reader. Older stored analyses predate
                     plainReason, so fall back rather than render a gap. */}
-                <p className="mt-2 leading-relaxed text-[--color-ink]">
+                <p className="mt-2 leading-relaxed text-ink">
                   {t.plainReason ?? t.reasoning}
                 </p>
                 {t.plainReason && (
                   <details className="group mt-2">
-                    <summary className="cursor-pointer list-none text-xs font-medium text-[--color-cyan] hover:underline">
+                    <summary className="cursor-pointer list-none text-xs font-medium text-cyan hover:underline">
                       <span className="group-open:hidden">Why, in FPL terms</span>
                       <span className="hidden group-open:inline">Hide the detail</span>
                     </summary>
-                    <p className="mt-1.5 text-xs leading-relaxed text-[--color-ink-muted]">
+                    <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
                       {t.reasoning}
                     </p>
                   </details>
                 )}
                 <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                   <div className="flex gap-1.5">
-                    <dt className="eyebrow text-[9px] text-[--color-ink-faint]">Funding</dt>
-                    <dd className="numeric text-[--color-cyan]">{t.funding}</dd>
+                    <dt className="eyebrow text-[9px] text-ink-faint">Funding</dt>
+                    <dd className="numeric text-cyan">{t.funding}</dd>
                   </div>
                   <div className="flex gap-1.5">
-                    <dt className="eyebrow text-[9px] text-[--color-ink-faint]">Gain</dt>
-                    <dd className="numeric text-[--color-ink-muted]">{t.expectedGain}</dd>
+                    <dt className="eyebrow text-[9px] text-ink-faint">Gain</dt>
+                    <dd className="numeric text-ink-muted">{t.expectedGain}</dd>
                   </div>
                 </dl>
               </li>
