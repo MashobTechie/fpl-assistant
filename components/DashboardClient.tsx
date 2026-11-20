@@ -2,11 +2,18 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  forgetDraft,
+  recallDraft,
+  rememberDraft,
+} from "@/lib/draft-session";
 import type { TransferChip } from "@/lib/squad/draft";
 import type {
   AnalysisResponse,
   GameweekAnalysisLike,
   ProjectionsResponse,
+  SavedDraft,
+  SavedDraftsResponse,
 } from "@/lib/types";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { CaptaincyPanel } from "./CaptaincyPanel";
@@ -14,6 +21,7 @@ import { ChipPanel } from "./ChipPanel";
 import { LineupTable } from "./LineupTable";
 import { PlanPanel } from "./PlanPanel";
 import { ReviewPanel } from "./ReviewPanel";
+import { SavedDrafts } from "./SavedDrafts";
 import { DraftVerdict } from "./DraftVerdict";
 import { PitchView } from "./PitchView";
 import { TransferSandbox, type Incoming } from "./TransferSandbox";
@@ -81,12 +89,36 @@ export function DashboardClient({
   // Kept beside the moves so a re-analysis asks the same question: the same
   // fifteen on a wildcard and off it are different decisions.
   const [draftChip, setDraftChip] = useState<TransferChip | null>(null);
+  // ---- Saved drafts -------------------------------------------------------
+  // Stored as the swaps, never the fifteen they produce and never the verdict:
+  // both are recomputed on open, because prices move daily and the engine that
+  // recomputes them is free.
+  const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [saveDraftError, setSaveDraftError] = useState<string | null>(null);
+  const [savedAs, setSavedAs] = useState<string | null>(null);
+  const [draftBusyId, setDraftBusyId] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [thinking, setThinking] = useState(false);
+
+  /**
+   * How to ask for this manager's squad.
+   *
+   * An imported squad goes by its FPL id, always. Sending its picks as a manual
+   * fifteen instead prices them against the £100m ceiling at today's prices —
+   * rejecting any squad that has risen in value — and drops the review, chips
+   * and free-transfer count, all of which need the id. That was fixed for the
+   * gameweek switcher and left in place here, where it ran on every page load.
+   */
+  function squadBody(picks?: number[] | null): Record<string, unknown> | null {
+    if (mode === "import" && entryId) return { entryId: Number(entryId) };
+    const ids = picks ?? projections?.squad.map((p) => p.playerId) ?? savedPicks;
+    return ids && ids.length ? { playerIds: ids } : null;
+  }
 
   /**
    * Project a squad for a gameweek. Free, fast, and the actual product — so it
@@ -112,25 +144,44 @@ export function DashboardClient({
     return true;
   }
 
-  // Restore on load, and re-project whenever the gameweek changes. Projections
-  // only: calling /api/analysis here would spend money on every page open, and
-  // a stored analysis arrives as a prop instead.
+  // Restore on load. Projections only: calling /api/analysis here would spend
+  // money on every page open, and a stored analysis arrives as a prop instead.
+  //
+  // Mount only. The gameweek switcher re-projects itself, so depending on
+  // `gameweek` here fired a second identical request on every switch and let
+  // whichever response arrived last win.
   useEffect(() => {
     if (!savedPicks) return;
     let cancelled = false;
 
     (async () => {
       try {
+        const body = squadBody(savedPicks);
+        if (!body) return;
         const res = await fetch("/api/projections", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            playerIds: savedPicks,
+            ...body,
             ...(gameweek !== null ? { gameweek } : {}),
           }),
         });
         const data = await res.json();
-        if (!cancelled && res.ok) setProjections(data as ProjectionsResponse);
+        if (cancelled || !res.ok) return;
+        setProjections(data as ProjectionsResponse);
+
+        // A draft someone was part-way through judging when the tab reloaded.
+        // Re-checked rather than restored from storage: the stored thing is
+        // the question, and the answer has to come from today's prices.
+        const kept = recallDraft();
+        if (
+          kept &&
+          kept.gameweek === (data as ProjectionsResponse).gameweek &&
+          entryId &&
+          kept.entryId === Number(entryId)
+        ) {
+          void checkDraft(kept.transfers, kept.chip, { silent: true });
+        }
       } catch {
         // A failed restore is not worth an error banner: the squad is still
         // saved, and the manager can re-run it.
@@ -142,7 +193,112 @@ export function DashboardClient({
     return () => {
       cancelled = true;
     };
-  }, [savedPicks, gameweek]);
+    // Mount only, deliberately — see above. Listing the values it reads would
+    // re-run a restore on every gameweek switch, which is the request this
+    // change removed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- Saved drafts -------------------------------------------------------
+
+  /**
+   * The drafts kept for this gameweek.
+   *
+   * Only ever for an imported squad: a draft is swaps against a real bank and
+   * real selling prices, and a manual fifteen has neither.
+   */
+  async function loadSavedDrafts(gw: number | null) {
+    if (!entryId || gw === null) return;
+    try {
+      const res = await fetch(`/api/drafts?gameweek=${gw}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as SavedDraftsResponse;
+      setSavedDrafts(data.drafts ?? []);
+    } catch {
+      // A list that will not load is not worth an error banner; the drafts are
+      // still there and the next load will show them.
+    }
+  }
+
+  // Fetched rather than cleared: the list is filtered by gameweek where it is
+  // rendered, so there is no stale state to wipe and nothing to set before the
+  // request comes back.
+  useEffect(() => {
+    if (!entryId || gameweek === null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/drafts?gameweek=${gameweek}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as SavedDraftsResponse;
+        if (!cancelled) setSavedDrafts(data.drafts ?? []);
+      } catch {
+        // See above: a missing list is not an error worth showing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameweek, entryId]);
+
+  /** Keep the draft on screen under a name, so it survives the session. */
+  async function saveDraft(name: string) {
+    if (!draftMoves || !entryId || gameweek === null) return;
+    setSavingDraft(true);
+    setSaveDraftError(null);
+    try {
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gameweek,
+          name,
+          transfers: draftMoves,
+          chip: draftChip,
+          entryId: Number(entryId),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveDraftError(data.error ?? "That draft could not be saved.");
+        return;
+      }
+      setSavedAs(name);
+      await loadSavedDrafts(gameweek);
+    } catch {
+      setSaveDraftError("Couldn't reach the server. Try again.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  /** Re-check a saved draft against today's prices and today's projections. */
+  async function openSavedDraft(draft: SavedDraft) {
+    setDraftBusyId(draft.id);
+    try {
+      const ok = await checkDraft(draft.transfers, draft.chip);
+      if (ok) setSavedAs(draft.name);
+    } finally {
+      setDraftBusyId(null);
+    }
+  }
+
+  async function deleteSavedDraft(draft: SavedDraft) {
+    setDraftBusyId(draft.id);
+    try {
+      const res = await fetch(`/api/drafts?id=${encodeURIComponent(draft.id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setSavedDrafts((list) => list.filter((d) => d.id !== draft.id));
+        if (savedAs === draft.name) setSavedAs(null);
+      }
+    } catch {
+      // Nothing useful to say: the row is still listed and still deletable.
+    } finally {
+      setDraftBusyId(null);
+    }
+  }
 
   /**
    * Switching gameweek re-projects the squad already on screen. The analysis
@@ -159,19 +315,15 @@ export function DashboardClient({
     setBaseline(null);
     setDraftMoves(null);
     setDraftChip(null);
+    setSavedAs(null);
     setSandbox(false);
+    // A draft belongs to one deadline, so it does not survive the switch.
+    forgetDraft();
 
-    // An imported squad is re-requested by its FPL ID. Sending its picks as a
-    // manual squad priced it against £100m at today's prices — rejecting any
-    // squad that had risen in value — and dropped the review, chips and free
-    // transfers, which all need the ID.
-    const body: Record<string, unknown> | null =
-      mode === "import" && entryId
-        ? { entryId: Number(entryId) }
-        : (() => {
-            const picks = real?.squad.map((p) => p.playerId) ?? savedPicks ?? null;
-            return picks ? { playerIds: picks } : null;
-          })();
+    // The real squad's picks, not the draft's: `projections` is the draft
+    // while one is on screen, and switching gameweek must not carry its moves
+    // into a week they were never proposed for.
+    const body = squadBody(real?.squad.map((p) => p.playerId) ?? savedPicks);
     if (!body) return;
     setPending(true);
     void runProjections(body, gw).finally(() => setPending(false));
@@ -188,8 +340,20 @@ export function DashboardClient({
   async function checkDraft(
     transfers: { out: number; in: number }[],
     chip: TransferChip | null,
-  ) {
-    if (!entryId) return;
+    /**
+     * `analyse` spends money, so it is opt-in. The sandbox button promises a
+     * written verdict and asks for one; restoring a draft after a reload, or
+     * reopening a saved one, must not bill for a page load nobody asked to pay
+     * for. The analyst is one click away either way.
+     *
+     * `silent` suppresses the error banner, for a restore the manager did not
+     * ask for: a draft whose player has since been transferred out in the real
+     * app should disappear quietly, not greet them with a failure.
+     */
+    opts: { analyse?: boolean; silent?: boolean } = {},
+  ): Promise<boolean> {
+    if (!entryId) return false;
+    const { analyse = false, silent = false } = opts;
     setCheckingDraft(true);
     setDraftError(null);
     try {
@@ -206,23 +370,40 @@ export function DashboardClient({
       });
       const data = await res.json();
       if (!res.ok) {
-        setDraftError(data.error ?? "That draft could not be checked.");
-        return;
+        if (silent) forgetDraft();
+        else setDraftError(data.error ?? "That draft could not be checked.");
+        return false;
       }
       setBaseline((b) => b ?? projections);
       setProjections(data as ProjectionsResponse);
       setDraftMoves(transfers);
       setDraftChip(chip);
       setSandbox(false);
+      setSavedAs(null);
+      setSaveDraftError(null);
       setAnalysis(null);
       setAnalysisError(null);
-      void runAnalysis({
+      // Survives a reload. The question is stored, never the verdict — which
+      // is why the restore above re-checks rather than redisplaying.
+      rememberDraft({
+        gameweek: (data as ProjectionsResponse).gameweek,
         entryId: Number(entryId),
         transfers,
-        ...(chip ? { chip } : {}),
+        chip,
       });
+      if (analyse) {
+        void runAnalysis({
+          entryId: Number(entryId),
+          transfers,
+          ...(chip ? { chip } : {}),
+        });
+      }
+      return true;
     } catch {
-      setDraftError("Couldn't reach the server. Check your connection and try again.");
+      if (!silent) {
+        setDraftError("Couldn't reach the server. Check your connection and try again.");
+      }
+      return false;
     } finally {
       setCheckingDraft(false);
     }
@@ -233,6 +414,9 @@ export function DashboardClient({
     setBaseline(null);
     setDraftMoves(null);
     setDraftChip(null);
+    setSavedAs(null);
+    setSaveDraftError(null);
+    forgetDraft();
     setAnalysis(null);
     setAnalysisError(null);
     setDraftError(null);
@@ -452,6 +636,18 @@ export function DashboardClient({
           horizon={projections.horizon}
           onBack={leaveDraft}
           onEdit={editDraft}
+          // Keeping it needs somewhere to hang it from: the FPL id the swaps
+          // were priced against, and the gameweek they were proposed for.
+          save={
+            entryId && gameweek !== null
+              ? {
+                  onSave: (name) => void saveDraft(name),
+                  saving: savingDraft,
+                  error: saveDraftError,
+                  savedAs,
+                }
+              : undefined
+          }
         />
       )}
 
@@ -464,7 +660,7 @@ export function DashboardClient({
             projections={projections}
             checking={checkingDraft}
             error={draftError}
-            onCheck={(t, c) => void checkDraft(t, c)}
+            onCheck={(t, c) => void checkDraft(t, c, { analyse: true })}
             onClose={() => {
               setSandbox(false);
               setDraftError(null);
@@ -546,6 +742,18 @@ export function DashboardClient({
           // The plan is already solved; re-finding its two names in the picker
           // by hand is busywork, so the move loads straight into the sandbox.
           onTry={canDraft ? (t) => trySandbox([t]) : undefined}
+        />
+      )}
+
+      {/* Beside the plan, because both answer the same question, and hidden
+          while a draft is open — the verdict on screen is the draft itself. */}
+      {projections && !sandbox && !projections.draft && gameweek !== null && (
+        <SavedDrafts
+          drafts={savedDrafts}
+          gameweek={gameweek}
+          busyId={draftBusyId}
+          onLoad={(d) => void openSavedDraft(d)}
+          onDelete={(d) => void deleteSavedDraft(d)}
         />
       )}
 

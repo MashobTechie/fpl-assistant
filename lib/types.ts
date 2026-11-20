@@ -131,3 +131,34 @@ export const DRAFT_WORTH_IT_POINTS = 2;
  * Free Hit is judged on its one gameweek against that same bar.
  */
 export const CHIP_WORTH_IT_POINTS = 8;
+
+// ----------------------------------------------------------- saved drafts
+
+/**
+ * A draft the manager asked to keep.
+ *
+ * The swaps and the chip, not the fifteen they produce and not the verdict:
+ * both are recomputed on load, because the engine is free and a week-old
+ * verdict read as current is worse than no verdict. See supabase/schema.sql.
+ */
+export interface SavedDraft {
+  id: string;
+  gameweek: number;
+  name: string;
+  transfers: { out: number; in: number }[];
+  chip: "wildcard" | "freehit" | null;
+  fpl_entry_id: number | null;
+  updated_at: string;
+}
+
+export interface SavedDraftsResponse {
+  drafts: SavedDraft[];
+}
+
+/**
+ * How many drafts one manager may keep per gameweek.
+ *
+ * High enough that nobody comparing options hits it, low enough that a client
+ * in a loop cannot fill the table.
+ */
+export const MAX_SAVED_DRAFTS_PER_GAMEWEEK = 12;

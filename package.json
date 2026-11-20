@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "validate:projections": "tsx scripts/validate-projections.ts",
     "dry-run": "tsx scripts/dry-run.ts",
-    "test": "tsx --test \"lib/**/__tests__/*.test.ts\""
+    "test": "tsx --test \"lib/**/__tests__/*.test.ts\"",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

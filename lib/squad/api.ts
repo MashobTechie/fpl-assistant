@@ -25,6 +25,25 @@ import {
   type ResolvedSquad,
 } from "./resolve";
 
+/**
+ * The swaps in a draft.
+ *
+ * Exported because /api/drafts stores them and /api/projections checks them,
+ * and a draft that saves in a shape the checker rejects is unloadable. One
+ * schema, so the two cannot drift.
+ */
+export const TransfersSchema = z
+  .array(
+    z.object({
+      out: z.number().int().positive(),
+      in: z.number().int().positive(),
+    }),
+  )
+  .max(15);
+
+/** The chips that change what a set of transfers costs. */
+export const ChipSchema = z.enum(["wildcard", "freehit"]);
+
 export const SquadRequestSchema = z
   .object({
     entryId: z.number().int().positive().optional(),
@@ -34,15 +53,7 @@ export const SquadRequestSchema = z
     /** Bypass the cached analysis and pay for a fresh one. Analysis only. */
     refresh: z.boolean().default(false),
     /** Swaps to try on an imported squad before making them in FPL. */
-    transfers: z
-      .array(
-        z.object({
-          out: z.number().int().positive(),
-          in: z.number().int().positive(),
-        }),
-      )
-      .max(15)
-      .optional(),
+    transfers: TransfersSchema.optional(),
     /**
      * A chip played with those transfers. Both suspend the transfer limit, so
      * the draft is costed without a hit; a Free Hit also expires after the one
@@ -50,7 +61,7 @@ export const SquadRequestSchema = z
      * second set of chips in the back half of the season and its public
      * history does not say which half a played chip came from.
      */
-    chip: z.enum(["wildcard", "freehit"]).optional(),
+    chip: ChipSchema.optional(),
   })
   .refine((b) => b.entryId !== undefined || b.playerIds !== undefined, {
     message: "Provide either an FPL team ID or a 15-player squad.",

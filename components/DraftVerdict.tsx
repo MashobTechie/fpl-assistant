@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import {
   CHIP_WORTH_IT_POINTS,
   DRAFT_WORTH_IT_POINTS,
@@ -19,11 +21,23 @@ export function DraftVerdict({
   horizon,
   onBack,
   onEdit,
+  save,
 }: {
   draft: NonNullable<ProjectionsResponse["draft"]>;
   horizon: number;
   onBack: () => void;
   onEdit: () => void;
+  /**
+   * Keeping the draft. Absent when there is nowhere to keep it — a signed-out
+   * session, or a squad with no FPL id to hang it from.
+   */
+  save?: {
+    onSave: (name: string) => void;
+    saving: boolean;
+    error: string | null;
+    /** The name this draft is already stored under, if it is. */
+    savedAs: string | null;
+  };
 }) {
   const c = draft.comparison;
   const chipLabel = draft.chip === "wildcard" ? "Wildcard" : "Free Hit";
@@ -123,6 +137,8 @@ export function DraftVerdict({
         </span>
       </p>
 
+      {save && <SaveDraft draft={draft} save={save} />}
+
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           type="button"
@@ -141,4 +157,116 @@ export function DraftVerdict({
       </div>
     </Card>
   );
+}
+
+/**
+ * Keeping a draft for later.
+ *
+ * Asks for a name, because the drafts worth saving are the ones being compared
+ * and two of those differ by a single player — "Haaland or Watkins" tells them
+ * apart in a list where "3 moves" does not. The proposal is built from the
+ * moves themselves so the common case is one tap.
+ */
+function SaveDraft({
+  draft,
+  save,
+}: {
+  draft: NonNullable<ProjectionsResponse["draft"]>;
+  save: NonNullable<Parameters<typeof DraftVerdict>[0]["save"]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(() => proposeName(draft));
+
+  if (save.savedAs && !open) {
+    return (
+      <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-[--color-ink-muted]">
+        <span className="text-[--color-accent]">Saved</span> as “{save.savedAs}”.
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-xs text-[--color-ink-faint] underline hover:text-[--color-ink]"
+        >
+          Save under another name
+        </button>
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-[--color-border] px-3.5 py-2 text-sm font-medium text-[--color-ink-muted] transition hover:border-[--color-cyan] hover:text-[--color-cyan]"
+        >
+          Save this draft
+        </button>
+      </div>
+    );
+  }
+
+  const trimmed = name.trim();
+  return (
+    <div className="mt-4 rounded-xl border border-[--color-border-bright] bg-[--color-surface-2] p-3">
+      <label
+        htmlFor="draft-name"
+        className="eyebrow mb-1.5 block text-[9px] text-[--color-ink-faint]"
+      >
+        Call it something you will recognise
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="draft-name"
+          autoFocus
+          value={name}
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && trimmed) save.onSave(trimmed);
+            if (e.key === "Escape") setOpen(false);
+          }}
+          className="min-w-0 flex-1 rounded-lg border border-[--color-border] bg-[--color-base] px-3 py-2 text-sm outline-none focus:border-[--color-cyan]"
+        />
+        <button
+          type="button"
+          disabled={!trimmed || save.saving}
+          onClick={() => save.onSave(trimmed)}
+          className="rounded-lg bg-[--color-cyan]/15 px-3.5 py-2 text-sm font-semibold text-[--color-cyan] ring-1 ring-[--color-cyan]/40 transition hover:bg-[--color-cyan]/25 disabled:opacity-50"
+        >
+          {save.saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={save.saving}
+          className="rounded-lg border border-[--color-border] px-3 py-2 text-sm text-[--color-ink-muted] transition hover:text-[--color-ink]"
+        >
+          Cancel
+        </button>
+      </div>
+      {save.error && (
+        <p role="alert" className="mt-2 text-sm text-[--color-pink]">
+          {save.error}
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-[--color-ink-faint]">
+        Reusing a name saves over that draft. Nothing is sent to FPL, now or
+        later — a saved draft is a note to yourself.
+      </p>
+    </div>
+  );
+}
+
+/** A name from the moves, so saving one transfer is a single tap. */
+function proposeName(draft: NonNullable<ProjectionsResponse["draft"]>): string {
+  const chip = draft.chip === "wildcard" ? "Wildcard" : draft.chip === "freehit" ? "Free Hit" : null;
+  if (draft.moves.length === 1) {
+    const m = draft.moves[0];
+    const move = `${m.out.name} → ${m.in.name}`;
+    return (chip ? `${chip}: ${move}` : move).slice(0, 60);
+  }
+  const incoming = draft.moves.map((m) => m.in.name).join(", ");
+  const base = chip ? `${chip}: ${incoming}` : `${draft.moves.length} moves — ${incoming}`;
+  return base.slice(0, 60);
 }
