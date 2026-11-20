@@ -256,6 +256,39 @@ async function main() {
       manualWildcard.body?.draft?.chip === "wildcard",
   );
 
+  // A Free Hit hands the squad back after one gameweek, so the plan beside
+  // the verdict has to describe the squad they keep. The tell is the plan's
+  // do-nothing total: on a Free Hit it must match the undrafted squad's, and
+  // without the chip it must match the drafted one's.
+  const plainDraft = await call("/api/projections", {
+    method: "POST",
+    body: JSON.stringify({
+      playerIds: squad,
+      horizon: 3,
+      transfers: [{ out: squad[14], in: swapIn }],
+    }),
+  });
+  const freeHitDraft = await call("/api/projections", {
+    method: "POST",
+    body: JSON.stringify({
+      playerIds: squad,
+      horizon: 3,
+      transfers: [{ out: squad[14], in: swapIn }],
+      chip: "freehit",
+    }),
+  });
+  const base = projected.body?.plan?.doNothingPoints;
+  check(
+    "a Free Hit plans from the squad it reverts to",
+    freeHitDraft.body?.plan?.doNothingPoints === base,
+    `free hit ${freeHitDraft.body?.plan?.doNothingPoints} vs undrafted ${base}`,
+  );
+  check(
+    "while a kept draft plans from itself",
+    plainDraft.body?.plan?.doNothingPoints !== base,
+    `kept ${plainDraft.body?.plan?.doNothingPoints} vs undrafted ${base}`,
+  );
+
   // The composition rules are shared with every other kind of squad, so this
   // is really a check that a manual draft is put through them at all.
   const fourth = await fourthFromAClub(squad);

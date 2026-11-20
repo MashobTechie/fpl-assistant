@@ -13,6 +13,43 @@ import {
 import { PitchView, type PitchEditing } from "./PitchView";
 import { Button } from "./ui";
 
+/**
+ * How many of the matching players to render.
+ *
+ * Every position has far more options than anyone scrolls, and the list is
+ * re-sortable, so the useful contract is "the best N by whatever you ranked
+ * on" plus a search box — not an unscrollable six hundred.
+ */
+const PICKER_LIMIT = 50;
+
+type SortKey = "horizon" | "gw" | "value" | "price";
+
+const SORTS: Record<
+  SortKey,
+  { label: string; hint: string; compare: (a: PlayerListItem, b: PlayerListItem) => number }
+> = {
+  horizon: {
+    label: "Points",
+    hint: "Expected points across the horizon",
+    compare: (a, b) => b.horizon - a.horizon,
+  },
+  gw: {
+    label: "This GW",
+    hint: "Expected points this gameweek alone",
+    compare: (a, b) => b.gw - a.gw,
+  },
+  value: {
+    label: "Value",
+    hint: "Expected points per £1m — how a downgrade funds an upgrade",
+    compare: (a, b) => b.ppm - a.ppm,
+  },
+  price: {
+    label: "Cheapest",
+    hint: "Price, lowest first — for the enabler who frees the money",
+    compare: (a, b) => a.cost - b.cost || b.horizon - a.horizon,
+  },
+};
+
 /** Only what a chosen replacement needs to be shown and priced. */
 export type Incoming = Pick<PlayerListItem, "id" | "name" | "team" | "cost">;
 
@@ -62,6 +99,12 @@ export function TransferSandbox({
     () => new Map(initialMoves ?? []),
   );
   const [picking, setPicking] = useState<PlayerProjection | null>(null);
+  // Expected points is the right default and the wrong only option. A transfer
+  // is usually funded by downgrading somewhere, and the player who frees the
+  // money is never near the top of a list ranked on points — so he was
+  // unreachable unless the manager already knew his name.
+  const [sort, setSort] = useState<SortKey>("horizon");
+  const [affordableOnly, setAffordableOnly] = useState(false);
   // A chip is the manager's to declare, not ours to infer: FPL grants a second
   // set in the back half of the season and its public history does not say
   // which half a played chip came from, so it cannot be read off reliably.
@@ -184,7 +227,13 @@ export function TransferSandbox({
     [...moves.values()].filter((p): p is Incoming => p !== null).map((p) => p.id),
   );
 
-  const options = useMemo(() => {
+  /** What the bank would read if this player filled the open slot. */
+  const bankAfter = (p: PlayerListItem) => {
+    const current = picking ? moves.get(picking.playerId) : null;
+    return summary.bank + (current?.cost ?? 0) - p.cost;
+  };
+
+  const matches = useMemo(() => {
     if (!players || !picking) return [];
     const q = query.trim().toLowerCase();
     return players
@@ -192,14 +241,14 @@ export function TransferSandbox({
       // Buying back a player you just sold is an undo, and has its own button.
       .filter((p) => !ownedIds.has(p.id))
       .filter((p) => !q || p.name.toLowerCase().includes(q) || p.team.toLowerCase().includes(q))
-      .slice(0, 50);
-  }, [players, picking, query, ownedIds]);
+      .filter((p) => !affordableOnly || bankAfter(p) >= -0.001)
+      .sort(SORTS[sort].compare);
+    // bankAfter closes over the running estimate, which is what the filter is
+    // for; it is re-derived on every change to the moves anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players, picking, query, ownedIds, sort, affordableOnly, summary.bank, moves]);
 
-  /** What the bank would read if this player filled the open slot. */
-  function bankIfPicked(p: PlayerListItem): number {
-    const current = picking ? moves.get(picking.playerId) : null;
-    return summary.bank + (current?.cost ?? 0) - p.cost;
-  }
+  const options = useMemo(() => matches.slice(0, PICKER_LIMIT), [matches]);
 
   function clubFullFor(p: PlayerListItem): boolean {
     const current = picking ? moves.get(picking.playerId) : null;
@@ -257,6 +306,35 @@ export function TransferSandbox({
             className="mb-2 w-full rounded-lg border border-[--color-border] bg-[--color-base] px-3 py-2 text-sm outline-none focus:border-[--color-cyan]"
           />
 
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex flex-wrap gap-1">
+              {(Object.keys(SORTS) as SortKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSort(key)}
+                  title={SORTS[key].hint}
+                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                    sort === key
+                      ? "bg-[--color-cyan]/15 text-[--color-cyan] ring-1 ring-[--color-cyan]/40"
+                      : "text-[--color-ink-muted] hover:text-[--color-ink]"
+                  }`}
+                >
+                  {SORTS[key].label}
+                </button>
+              ))}
+            </div>
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[--color-ink-muted]">
+              <input
+                type="checkbox"
+                checked={affordableOnly}
+                onChange={(e) => setAffordableOnly(e.target.checked)}
+                className="h-3.5 w-3.5 accent-[--color-cyan]"
+              />
+              Only what I can afford
+            </label>
+          </div>
+
           {loadError && <p className="text-sm text-[--color-pink]">{loadError}</p>}
           {!players && !loadError && (
             <p className="text-sm text-[--color-ink-muted]">Loading players…</p>
@@ -264,7 +342,7 @@ export function TransferSandbox({
 
           <ul className="max-h-72 divide-y divide-[--color-border] overflow-y-auto rounded-lg border border-[--color-border]">
             {options.map((p) => {
-              const left = bankIfPicked(p);
+              const left = bankAfter(p);
               const cantAfford = left < -0.001;
               const clubFull = clubFullFor(p);
               const taken = alreadyBought.has(p.id);
@@ -326,7 +404,15 @@ export function TransferSandbox({
             )}
           </ul>
           <p className="mt-2 text-[11px] text-[--color-ink-faint]">
-            Right-hand number: expected points over the next {projections.horizon} gameweeks.
+            Right-hand number: expected points over the next {projections.horizon}{" "}
+            gameweeks.
+            {matches.length > PICKER_LIMIT && (
+              <>
+                {" "}
+                Showing the top {PICKER_LIMIT} of {matches.length} — search by
+                name, or change the ranking above.
+              </>
+            )}
           </p>
         </div>
       )}

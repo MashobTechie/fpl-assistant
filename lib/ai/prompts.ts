@@ -167,7 +167,7 @@ function draftSection(req: AnalysisRequest): string {
   // of this section — the plan, the ranked swaps, the chip values — describes
   // the drafted fifteen, which on a Free Hit the manager does not keep.
   const horizonNote = c.revertsNextWeek
-    ? `\nA Free Hit lasts one gameweek: the horizon figure above is scored on the squad they keep from next gameweek, so judge it on the GW${req.gameweek} figure alone. The plan and the ranked swaps below were computed on the drafted fifteen and do not survive the Free Hit — do not advise from them.`
+    ? `\nA Free Hit lasts one gameweek: the horizon figure above is scored on the squad they keep from next gameweek, so judge it on the GW${req.gameweek} figure alone. The plan and the ranked swaps below are computed on that kept squad rather than on the drafted fifteen, since the drafted fifteen is handed back — so they are advice for after the chip, not for it.`
     : "";
   const moves = d.moves
     .map(

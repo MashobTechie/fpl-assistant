@@ -229,6 +229,8 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
   let manual = false;
   const sellPrices: Record<number, number> = {};
   let baselineIds: number[] | null = null;
+  let baselineBank: number | null = null;
+  let baselineSellPrices: Record<number, number> = {};
   let draftMoves: DraftMove[] = [];
 
   if (opts.chip && !opts.transfers?.length) {
@@ -306,6 +308,10 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
       );
     }
     baselineIds = playerIds;
+    // Copied before applyDraft rewrites them. A Free Hit hands the old squad
+    // back next gameweek, and planning from that squad needs the money it has.
+    baselineBank = bank;
+    baselineSellPrices = { ...sellPrices };
     const teams = new Map(bootstrap.teams.map((t) => [t.id, t.short_name]));
     // An imported squad transfers from its real position: FPL's own bank, and
     // selling prices that return only half of any rise. A manual fifteen has
@@ -461,10 +467,36 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     freeForPlan = chip ? budget.free : Math.max(0, budget.free - draftMoves.length);
   }
 
+  /**
+   * What to plan the next several gameweeks from.
+   *
+   * Normally the squad on screen. On a Free Hit it is the squad being handed
+   * back: the chip lasts one gameweek, so a five-week plan built on the
+   * borrowed fifteen would recommend selling players the manager will not own
+   * by the time the first move comes around. The verdict already scores the
+   * chip on its one week; this makes the plan beside it describe the same
+   * reality.
+   */
+  const freeHit = draft?.chip === "freehit" && baselineIds !== null;
+  const planSquad = freeHit
+    ? baselineIds!.map((id) => projectPlayer(elementsById.get(id)!, ctx, gameweek, horizon))
+    : squad;
+  const planEconomics = freeHit
+    ? buildEconomics(planSquad, { bank: baselineBank, sellPrices: baselineSellPrices })
+    : economics;
+  const planFunded = freeHit
+    ? fundableTargets(
+        pickTransferTargets(allProjections, new Set(baselineIds!)),
+        planSquad,
+        planEconomics,
+      )
+    : { affordable, unaffordable };
+  const planTargets = planFunded.affordable;
+
   const transferCandidates = rankTransfers(
-    squad,
-    affordable.map((t) => t.player),
-    economics,
+    planSquad,
+    planTargets.map((t) => t.player),
+    planEconomics,
     gameweek,
     horizon,
   );
@@ -490,20 +522,20 @@ export async function resolveSquad(opts: ResolveOptions): Promise<ResolvedSquad>
     squad,
     optimal,
     captaincy: captaincyCandidates(optimal.startingXI, gameweek),
-    transferTargets: affordable,
+    transferTargets: planTargets,
     transferCandidates,
     plan: planTransfers(
-      squad,
+      planSquad,
       transferCandidates,
       new Map(allProjections.map((p) => [p.playerId, p])),
-      economics,
+      planEconomics,
       freeForPlan,
       gameweek,
       horizon,
     ),
     economics,
     draft,
-    unaffordableTargets: unaffordable,
+    unaffordableTargets: planFunded.unaffordable,
     playerIds,
   };
 }
